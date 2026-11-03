@@ -12,6 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.96",
+    "ai": "^7.0.162",
     "next": "^16.4.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

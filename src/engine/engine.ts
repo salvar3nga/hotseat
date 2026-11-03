@@ -1,14 +1,13 @@
+import { COMPETENCIES } from "./types";
 import type {
   Competency,
-  Effect,
   Event,
   SessionConfig,
   SessionState,
+  StepResult,
   Turn,
   TurnKind,
 } from "./types";
-
-const COMPETENCIES: Competency[] = ["ownership", "conflict", "ambiguity", "failure"];
 
 // mulberry32: tiny deterministic PRNG so a stored seed reproduces the plan
 function seededUnitInterval(seed: number): number {
@@ -29,8 +28,6 @@ export function createSession({ mode, seed }: SessionConfig): SessionState {
     awaiting: null,
   };
 }
-
-type StepResult = { state: SessionState; effects: Effect[] };
 
 function interviewerTurn(
   kind: TurnKind,

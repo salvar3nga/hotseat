@@ -1,3 +1,10 @@
+import { DrillSession } from "./drill-session";
+
 export default function Home() {
-  return <main>Hotseat</main>;
+  return (
+    <main>
+      <h1>Hotseat</h1>
+      <DrillSession />
+    </main>
+  );
 }

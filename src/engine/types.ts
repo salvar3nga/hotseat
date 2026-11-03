@@ -1,4 +1,6 @@
-export type Competency = "ownership" | "conflict" | "ambiguity" | "failure";
+export const COMPETENCIES = ["ownership", "conflict", "ambiguity", "failure"] as const;
+
+export type Competency = (typeof COMPETENCIES)[number];
 
 export type SessionStatus = "configured" | "in-progress" | "completed";
 
@@ -32,8 +34,18 @@ export type Event =
   | { type: "modelReply"; text: string; now: number }
   | { type: "candidateTurn"; text: string; startedAt: number; endedAt: number };
 
+export const GENERATED_KINDS = ["question", "wrap-up"] as const satisfies readonly TurnKind[];
+
 export type Effect = {
   type: "generateTurn";
-  kind: Extract<TurnKind, "question" | "wrap-up">;
+  kind: (typeof GENERATED_KINDS)[number];
   competency: Competency;
+};
+
+export type StepResult = { state: SessionState; effects: Effect[] };
+
+export type TurnRequest = {
+  kind: Effect["kind"];
+  competency: Competency;
+  transcript: Pick<Turn, "speaker" | "body">[];
 };
