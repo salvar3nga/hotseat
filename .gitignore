@@ -1,7 +1,9 @@
 .agents
 .claude
 .codex
+.scratch
 skills-lock.json
 
 /docs/adr
 /docs/specs
+/docs/agents

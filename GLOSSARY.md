@@ -2,11 +2,11 @@
 
 **Hotseat**: AI-driven interview practice app. Public repo, MIT license.
 
-**Session**: One run of the interview engine, from start to debrief. Has a mode, a role profile, an interview language, and a clock.
+**Session**: One run of the interview engine, from start to debrief. Has a mode, a role profile, an interview language, a clock, and a competency plan. Status is `configured`, `in-progress`, `completed`, `debriefed`, or `abandoned`.
 
 **Mode**: Either `mock` (full interview, 30 or 45 minutes) or `drill` (one competency, about 10 minutes, no warm-up).
 
-**Turn**: One message from the interviewer or the candidate. The unit the session engine works in, so text and voice can share it.
+**Turn**: One message from the interviewer or the candidate. The unit the session engine works in, so text and voice can share it. Has a speaker, a plain-text body, a turn kind, start and end timestamps, and a competency.
 
 **Interviewer**: The AI side of a session. Rubric-driven, asks follow-ups, nudges on long answers.
 
@@ -27,6 +27,30 @@
 **Rubric**: The scoring criteria for a competency at a given level. Every score must cite evidence.
 
 **Evidence**: A quote from the candidate's transcript supporting a score.
+
+**Engine**: The session state machine, `(state, event) -> (state, effects)`. Pure, UI-free, runs in the browser. Never reads a real clock; time comes in as input. Model calls and timers are injected.
+
+**Event**: An input to the engine, such as a candidate turn, a clock tick, or a stop request.
+
+**Effect**: An output the engine asks its caller to perform, such as calling the model or saving a snapshot.
+
+**Turn kind**: One of `question`, `answer`, `follow-up`, `nudge`, `warm-up`, `wrap-up`.
+
+**Competency plan**: The ordered list of competencies a session covers, picked once when the session is configured, weighted by level and mode, with a stored seed. Skipped or cut-short questions are recorded, not replaced. A drill has a plan of one.
+
+**Warm-up**: Short opening question in a `mock` session. Skippable; a skip is recorded so the debrief does not count it as a miss.
+
+**Nudge**: A soft, in-character prompt to move on when a candidate answer passes its time budget (2.5 minutes in `mock`, 3 in `drill`). At most once per candidate turn, never cuts the candidate off.
+
+**Follow-up cap**: Maximum follow-ups on one question before the engine moves on (2 by default, config).
+
+**Wrap-up**: The interviewer's closing turn. When the clock hits zero no new question is asked, the current answer finishes, then the wrap-up.
+
+**Snapshot**: The in-progress session saved to IndexedDB after every turn, one slot per browser, expiring after 24 hours. Deleted when the session ends and by "delete all history". Time waiting on the model and time away from the tab do not count against the clock.
+
+**Abandoned**: Session status for a session with nothing scorable. No debrief. Stopping after at least one scored answer is `completed` with a partial debrief.
+
+**Coding session**: Session type for a coding question, with its own 25-minute clock, separate from the `mock` and `drill` clocks. Overrun is allowed and recorded.
 
 **Debrief**: End-of-session report: score per competency with evidence, rewritten answers for top weaknesses, and a practice plan.
 
