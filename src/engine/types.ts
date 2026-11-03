@@ -19,6 +19,7 @@ export type SessionConfig = {
 };
 
 export type SessionState = {
+  mode: SessionConfig["mode"];
   status: SessionStatus;
   seed: number;
   plan: Competency[];
@@ -33,6 +34,6 @@ export type Event =
 
 export type Effect = {
   type: "generateTurn";
-  kind: "question" | "wrap-up";
+  kind: Extract<TurnKind, "question" | "wrap-up">;
   competency: Competency;
 };

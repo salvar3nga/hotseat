@@ -5,6 +5,7 @@ import type {
   SessionConfig,
   SessionState,
   Turn,
+  TurnKind,
 } from "./types";
 
 const COMPETENCIES: Competency[] = ["ownership", "conflict", "ambiguity", "failure"];
@@ -17,9 +18,10 @@ function seededUnitInterval(seed: number): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-export function createSession({ seed }: SessionConfig): SessionState {
+export function createSession({ mode, seed }: SessionConfig): SessionState {
   const pick = Math.floor(seededUnitInterval(seed) * COMPETENCIES.length);
   return {
+    mode,
     status: "configured",
     seed,
     plan: [COMPETENCIES[pick]],
@@ -30,31 +32,38 @@ export function createSession({ seed }: SessionConfig): SessionState {
 
 type StepResult = { state: SessionState; effects: Effect[] };
 
+function interviewerTurn(
+  kind: TurnKind,
+  body: string,
+  now: number,
+  competency: Competency,
+): Turn {
+  return { speaker: "interviewer", body, kind, startedAt: now, endedAt: now, competency };
+}
+
 export function step(state: SessionState, event: Event): StepResult {
+  const ignored: StepResult = { state, effects: [] };
   const competency = state.plan[0];
 
   switch (event.type) {
     case "start":
+      if (state.status !== "configured") return ignored;
       return {
         state: { ...state, status: "in-progress", awaiting: "question" },
         effects: [{ type: "generateTurn", kind: "question", competency }],
       };
     case "modelReply": {
-      const kind = state.awaiting === "wrap-up" ? "wrap-up" : "question";
-      const turn: Turn = {
-        speaker: "interviewer",
-        body: event.text,
-        kind,
-        startedAt: event.now,
-        endedAt: event.now,
-        competency,
-      };
-      const turns = [...state.turns, turn];
-      return kind === "wrap-up"
+      if (state.awaiting !== "question" && state.awaiting !== "wrap-up") return ignored;
+      const turns = [
+        ...state.turns,
+        interviewerTurn(state.awaiting, event.text, event.now, competency),
+      ];
+      return state.awaiting === "wrap-up"
         ? { state: { ...state, turns, status: "completed", awaiting: null }, effects: [] }
         : { state: { ...state, turns, awaiting: "answer" }, effects: [] };
     }
     case "candidateTurn": {
+      if (state.awaiting !== "answer") return ignored;
       const turn: Turn = {
         speaker: "candidate",
         body: event.text,
