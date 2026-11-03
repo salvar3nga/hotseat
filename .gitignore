@@ -7,3 +7,8 @@ skills-lock.json
 /docs/adr
 /docs/specs
 /docs/agents
+node_modules
+.next
+next-env.d.ts
+*.tsbuildinfo
+.env*
