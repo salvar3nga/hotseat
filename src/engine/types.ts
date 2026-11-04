@@ -1,10 +1,17 @@
-export const COMPETENCIES = ["ownership", "conflict", "ambiguity", "failure"] as const;
+export const COMPETENCIES = [
+  "ownership",
+  "conflict",
+  "ambiguity",
+  "failure",
+  "leadership",
+  "communication",
+] as const;
 
 export type Competency = (typeof COMPETENCIES)[number];
 
 export type SessionStatus = "configured" | "in-progress" | "completed";
 
-export type TurnKind = "question" | "answer" | "wrap-up";
+export type TurnKind = "question" | "answer" | "wrap-up" | "warm-up" | "warm-up-skip";
 
 export type Turn = {
   speaker: "interviewer" | "candidate";
@@ -12,12 +19,23 @@ export type Turn = {
   kind: TurnKind;
   startedAt: number;
   endedAt: number;
-  competency: Competency;
+  competency: Competency | null;
 };
 
-export type SessionConfig = {
-  mode: "drill";
-  seed: number;
+export type MockDuration = 30 | 45;
+
+export type SessionConfig =
+  | { mode: "drill"; seed: number }
+  | { mode: "mock"; durationMinutes: MockDuration; seed: number };
+
+export type EngineConfig = {
+  mockCompetencyCounts: Record<MockDuration, number>;
+  warmUpMinutes: number;
+};
+
+export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
+  mockCompetencyCounts: { 30: 4, 45: 6 },
+  warmUpMinutes: 3,
 };
 
 export type SessionState = {
@@ -25,6 +43,7 @@ export type SessionState = {
   status: SessionStatus;
   seed: number;
   plan: Competency[];
+  warmUpMinutes: number | null;
   turns: Turn[];
   awaiting: TurnKind | null;
 };
@@ -32,20 +51,25 @@ export type SessionState = {
 export type Event =
   | { type: "start"; now: number }
   | { type: "modelReply"; text: string; now: number }
+  | { type: "skipWarmUp"; now: number }
   | { type: "candidateTurn"; text: string; startedAt: number; endedAt: number };
 
-export const GENERATED_KINDS = ["question", "wrap-up"] as const satisfies readonly TurnKind[];
+export const GENERATED_KINDS = ["question", "wrap-up", "warm-up"] as const satisfies readonly TurnKind[];
 
 export type Effect = {
   type: "generateTurn";
   kind: (typeof GENERATED_KINDS)[number];
-  competency: Competency;
+  competency: Competency | null;
 };
 
 export type StepResult = { state: SessionState; effects: Effect[] };
 
 export type TurnRequest = {
   kind: Effect["kind"];
-  competency: Competency;
+  competency: Competency | null;
   transcript: Pick<Turn, "speaker" | "body">[];
 };
+
+export function isOneOf<T extends string>(options: readonly T[], value: unknown): value is T {
+  return typeof value === "string" && (options as readonly string[]).includes(value);
+}

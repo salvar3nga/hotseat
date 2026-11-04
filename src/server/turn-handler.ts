@@ -1,4 +1,4 @@
-import { COMPETENCIES, GENERATED_KINDS } from "../engine/types";
+import { COMPETENCIES, GENERATED_KINDS, isOneOf } from "../engine/types";
 import type { TurnRequest } from "../engine/types";
 
 export type ModelRequest = {
@@ -19,28 +19,25 @@ function isTranscriptEntry(value: unknown): value is TranscriptEntry {
   );
 }
 
-function isOneOf<T extends string>(options: readonly T[], value: unknown): value is T {
-  return typeof value === "string" && (options as readonly string[]).includes(value);
-}
-
 function parseTurnRequest(value: unknown): TurnRequest | null {
   if (typeof value !== "object" || value === null) return null;
   const { kind, competency, transcript } = value as Record<string, unknown>;
   if (!isOneOf(GENERATED_KINDS, kind)) return null;
-  if (!isOneOf(COMPETENCIES, competency)) return null;
+  if (competency !== null && !isOneOf(COMPETENCIES, competency)) return null;
   if (!Array.isArray(transcript) || !transcript.every(isTranscriptEntry)) return null;
   return { kind, competency, transcript };
 }
 
 const TASK_BY_KIND: Record<TurnRequest["kind"], string> = {
   question: "Ask one behavioral interview question about this competency. Output only the question.",
+  "warm-up": "Ask one short, friendly icebreaker question unrelated to the job. Output only the question.",
   "wrap-up": "Close the interview with one or two short sentences. Do not give feedback or scores.",
 };
 
 function instructionsFor({ kind, competency }: TurnRequest): string {
   return [
-    "You are a rigorous but friendly interviewer running a behavioral interview drill.",
-    `Competency: ${competency}.`,
+    "You are a rigorous but friendly interviewer running a behavioral interview.",
+    ...(competency ? [`Competency: ${competency}.`] : []),
     TASK_BY_KIND[kind],
   ].join("\n");
 }

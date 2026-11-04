@@ -34,7 +34,7 @@
 
 **Effect**: An output the engine asks its caller to perform, such as calling the model or saving a snapshot.
 
-**Turn kind**: One of `question`, `answer`, `follow-up`, `nudge`, `warm-up`, `wrap-up`.
+**Turn kind**: One of `question`, `answer`, `follow-up`, `nudge`, `warm-up`, `warm-up-skip`, `wrap-up`. `warm-up-skip` is the candidate turn that records a skipped warm-up.
 
 **Competency plan**: The ordered list of competencies a session covers, picked once when the session is configured, weighted by level and mode, with a stored seed. Skipped or cut-short questions are recorded, not replaced. A drill has a plan of one.
 

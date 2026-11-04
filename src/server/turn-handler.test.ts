@@ -28,6 +28,16 @@ describe("POST /api/turn", () => {
     expect(await response.json()).toEqual({ text: "Tell me about a project you owned." });
   });
 
+  it("accepts a warm-up request with no competency", async () => {
+    const generate = vi.fn<GenerateReply>(async () => "How has your week been?");
+    const handler = createTurnHandler(generate);
+
+    const response = await handler(post({ kind: "warm-up", competency: null, transcript: [] }));
+
+    expect(response.status).toBe(200);
+    expect(generate.mock.calls[0][0].instructions).not.toContain("Competency:");
+  });
+
   it("sends the full transcript to the model after an opening user message", async () => {
     const generate = vi.fn<GenerateReply>(async () => "Thanks, that is all.");
     const handler = createTurnHandler(generate);
