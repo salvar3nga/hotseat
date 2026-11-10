@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { createSession, step } from "../engine/engine";
+import { useEffect, useRef, useState } from "react";
+import { createSession, remainingMs, step } from "../engine/engine";
 import type { SessionState, StepResult, TurnRequest } from "../engine/types";
 
 async function requestModelText({ state, effects }: StepResult): Promise<string> {
@@ -19,16 +19,22 @@ async function requestModelText({ state, effects }: StepResult): Promise<string>
 
 // Feeds each model reply back into the engine. Progress is reported after every
 // step so a failed call leaves the unfinished effects available for a retry.
+// It reads the latest progress after each await because tab events may have changed
+// the state while the model was thinking.
 async function runUntilIdle(
-  initial: StepResult,
+  readProgress: () => StepResult,
   onProgress: (progress: StepResult) => void,
 ): Promise<void> {
-  let progress = initial;
-  while (progress.effects.length > 0) {
-    const text = await requestModelText(progress);
-    progress = step(progress.state, { type: "modelReply", text, now: Date.now() });
-    onProgress(progress);
+  while (readProgress().effects.length > 0) {
+    const text = await requestModelText(readProgress());
+    onProgress(step(readProgress().state, { type: "modelReply", text, now: Date.now() }));
   }
+}
+
+function formatCountdown(ms: number): string {
+  const totalSeconds = Math.ceil(ms / 1000);
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${Math.floor(totalSeconds / 60)}:${seconds}`;
 }
 
 export function DrillSession() {
@@ -37,16 +43,39 @@ export function DrillSession() {
   const [answerStartedAt, setAnswerStartedAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const latestProgress = useRef<StepResult | null>(null);
 
   const state: SessionState | null = progress?.state ?? null;
   const replyPending = !busy && progress !== null && progress.effects.length > 0;
 
-  async function advance(next: StepResult) {
+  function commit(next: StepResult) {
+    latestProgress.current = next;
     setProgress(next);
+  }
+
+  useEffect(() => {
+    function reportTabVisibility() {
+      const current = latestProgress.current;
+      if (!current) return;
+      const type = document.hidden ? "tabHidden" : "tabVisible";
+      commit({ state: step(current.state, { type, now: Date.now() }).state, effects: current.effects });
+    }
+    document.addEventListener("visibilitychange", reportTabVisibility);
+    return () => document.removeEventListener("visibilitychange", reportTabVisibility);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function advance(next: StepResult) {
+    commit(next);
     setBusy(true);
     setError(null);
     try {
-      await runUntilIdle(next, setProgress);
+      await runUntilIdle(() => latestProgress.current ?? next, commit);
       setAnswerStartedAt(Date.now());
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Something went wrong.");
@@ -83,6 +112,8 @@ export function DrillSession() {
           Start a drill
         </button>
       )}
+
+      {state && <p aria-label="Time left">{formatCountdown(remainingMs(state, now))}</p>}
 
       {state && (
         <ol>

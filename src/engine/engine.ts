@@ -4,12 +4,15 @@ import type {
   Effect,
   EngineConfig,
   Event,
+  SessionClock,
   SessionConfig,
   SessionState,
   StepResult,
   Turn,
   TurnKind,
 } from "./types";
+
+const MS_PER_MINUTE = 60_000;
 
 // mulberry32: tiny deterministic PRNG so a stored seed reproduces the plan
 function seededUnitInterval(seed: number): number {
@@ -53,7 +56,40 @@ export function createSession(
     followUpsAsked: 0,
     turns: [],
     awaiting: null,
+    clock: { budgetMs: budgetMinutes(config, engineConfig) * MS_PER_MINUTE, elapsedMs: 0, runningSince: null },
+    tabHidden: false,
   };
+}
+
+function budgetMinutes(config: SessionConfig, { drillMinutes }: EngineConfig): number {
+  return config.mode === "mock" ? config.durationMinutes : drillMinutes;
+}
+
+// The clock only runs while the candidate can answer in a visible tab, so model waits
+// and time away from the tab never count.
+function isClockRunning(state: SessionState): boolean {
+  return state.status === "in-progress" && state.awaiting === "answer" && !state.tabHidden;
+}
+
+function elapsedAt(clock: SessionClock, now: number): number {
+  return clock.elapsedMs + (clock.runningSince === null ? 0 : Math.max(0, now - clock.runningSince));
+}
+
+export function remainingMs(state: SessionState, now: number): number {
+  return Math.max(0, state.clock.budgetMs - elapsedAt(state.clock, now));
+}
+
+function reclock(previous: SessionState, next: SessionState, now: number): SessionState {
+  const clock = {
+    ...next.clock,
+    elapsedMs: elapsedAt(previous.clock, now),
+    runningSince: isClockRunning(next) ? now : null,
+  };
+  return { ...next, clock };
+}
+
+function eventTime(event: Event): number {
+  return event.type === "candidateTurn" ? event.endedAt : event.now;
 }
 
 function competencyFor(kind: TurnKind, state: SessionState): Competency | null {
@@ -96,6 +132,12 @@ function afterWarmUp(state: SessionState, warmUpReply: Turn): StepResult {
 }
 
 export function step(state: SessionState, event: Event): StepResult {
+  const result = transition(state, event);
+  if (result.state === state) return result;
+  return { ...result, state: reclock(state, result.state, eventTime(event)) };
+}
+
+function transition(state: SessionState, event: Event): StepResult {
   const ignored: StepResult = { state, effects: [] };
 
   switch (event.type) {
@@ -123,6 +165,10 @@ export function step(state: SessionState, event: Event): StepResult {
         state,
         turn("candidate", "warm-up-skip", "", event.now, event.now, state),
       );
+    case "tabHidden":
+      return state.tabHidden ? ignored : { state: { ...state, tabHidden: true }, effects: [] };
+    case "tabVisible":
+      return state.tabHidden ? { state: { ...state, tabHidden: false }, effects: [] } : ignored;
     case "candidateTurn": {
       if (state.awaiting !== "answer") return ignored;
       const kind = isAnsweringWarmUp(state) ? "warm-up" : "answer";

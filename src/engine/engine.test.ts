@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSession, step } from "./engine";
+import { createSession, remainingMs, step } from "./engine";
 import { DEFAULT_ENGINE_CONFIG } from "./types";
 import type { Effect, Event, SessionState } from "./types";
 
@@ -40,7 +40,7 @@ describe("createSession in mock mode", () => {
   });
 
   it("takes counts and warm-up length from config", () => {
-    const config = { mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5, followUpCap: 2 } as const;
+    const config = { mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5, followUpCap: 2, drillMinutes: 10 } as const;
     const session = createSession({ mode: "mock", durationMinutes: 45, seed: 7 }, config);
 
     expect(session.plan).toHaveLength(3);
@@ -301,5 +301,83 @@ describe("follow-ups", () => {
       kind: "follow-up",
       competency: mockSession().plan[1],
     });
+  });
+});
+
+describe("the session clock", () => {
+  const MINUTE = 60_000;
+  const secondsIntoAnswer = (seconds: number) => 2_000 + seconds * 1_000;
+  const awaitingAnswer = (events: Event[] = []) =>
+    playEvents(drill(), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Tell me about a time you owned a project.", now: 2_000 },
+      ...events,
+    ]).state;
+
+  it("budgets 10 minutes for a drill and the chosen duration for a mock", () => {
+    expect(remainingMs(drill(), 0)).toBe(10 * MINUTE);
+    expect(remainingMs(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), 0)).toBe(30 * MINUTE);
+    expect(remainingMs(createSession({ mode: "mock", durationMinutes: 45, seed: 7 }), 0)).toBe(45 * MINUTE);
+  });
+
+  it("does not run before the session starts", () => {
+    expect(remainingMs(drill(), 99 * MINUTE)).toBe(10 * MINUTE);
+  });
+
+  it("counts down while the candidate is answering, fast-forwarded by the now input", () => {
+    expect(remainingMs(awaitingAnswer(), secondsIntoAnswer(90))).toBe(10 * MINUTE - 90_000);
+  });
+
+  it("never shows more than the budget when the reader's now lags the clock", () => {
+    expect(remainingMs(awaitingAnswer(), 1_000)).toBe(10 * MINUTE);
+  });
+
+  it("never goes below zero", () => {
+    expect(remainingMs(awaitingAnswer(), secondsIntoAnswer(11 * 60))).toBe(0);
+  });
+
+  it("excludes time spent waiting for the model", () => {
+    const started = playEvents(drill(), [{ type: "start", now: 1_000 }]).state;
+
+    expect(remainingMs(started, 500_000)).toBe(10 * MINUTE);
+  });
+
+  it("keeps the answer time once the model starts a new wait", () => {
+    const answered = awaitingAnswer([
+      { type: "candidateTurn", text: "I led it.", startedAt: 2_000, endedAt: secondsIntoAnswer(60) },
+    ]);
+
+    expect(remainingMs(answered, secondsIntoAnswer(60) + 5 * MINUTE)).toBe(10 * MINUTE - 60_000);
+  });
+
+  it("excludes time away from the tab", () => {
+    const returned = awaitingAnswer([
+      { type: "tabHidden", now: secondsIntoAnswer(30) },
+      { type: "tabVisible", now: secondsIntoAnswer(30) + 5 * MINUTE },
+    ]);
+
+    expect(remainingMs(returned, secondsIntoAnswer(30) + 5 * MINUTE + 20_000)).toBe(10 * MINUTE - 50_000);
+  });
+
+  it("stays stopped while the tab is hidden", () => {
+    const hidden = awaitingAnswer([{ type: "tabHidden", now: secondsIntoAnswer(30) }]);
+
+    expect(remainingMs(hidden, secondsIntoAnswer(30) + 9 * MINUTE)).toBe(10 * MINUTE - 30_000);
+  });
+
+  it("does not restart the clock when the tab returns during a model wait", () => {
+    const started = playEvents(drill(), [
+      { type: "start", now: 1_000 },
+      { type: "tabHidden", now: 2_000 },
+      { type: "tabVisible", now: 3_000 },
+    ]).state;
+
+    expect(remainingMs(started, 500_000)).toBe(10 * MINUTE);
+  });
+
+  it("ignores a tab event that repeats the current visibility", () => {
+    const state = awaitingAnswer();
+
+    expect(step(state, { type: "tabVisible", now: 9_000 })).toEqual({ state, effects: [] });
   });
 });

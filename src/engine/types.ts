@@ -32,12 +32,20 @@ export type EngineConfig = {
   mockCompetencyCounts: Record<MockDuration, number>;
   warmUpMinutes: number;
   followUpCap: number;
+  drillMinutes: number;
 };
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   mockCompetencyCounts: { 30: 4, 45: 6 },
   warmUpMinutes: 3,
   followUpCap: 2,
+  drillMinutes: 10,
+};
+
+export type SessionClock = {
+  budgetMs: number;
+  elapsedMs: number;
+  runningSince: number | null;
 };
 
 export type SessionState = {
@@ -51,12 +59,16 @@ export type SessionState = {
   followUpsAsked: number;
   turns: Turn[];
   awaiting: TurnKind | null;
+  clock: SessionClock;
+  tabHidden: boolean;
 };
 
 export type Event =
   | { type: "start"; now: number }
   | { type: "modelReply"; text: string; now: number }
   | { type: "skipWarmUp"; now: number }
+  | { type: "tabHidden"; now: number }
+  | { type: "tabVisible"; now: number }
   | { type: "candidateTurn"; text: string; startedAt: number; endedAt: number; missingSignal?: boolean };
 
 export const GENERATED_KINDS = ["question", "follow-up", "wrap-up", "warm-up"] as const satisfies readonly TurnKind[];
