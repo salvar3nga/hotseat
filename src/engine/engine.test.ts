@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSession, step } from "./engine";
+import { DEFAULT_ENGINE_CONFIG } from "./types";
 import type { Effect, Event, SessionState } from "./types";
 
 describe("createSession", () => {
@@ -39,7 +40,7 @@ describe("createSession in mock mode", () => {
   });
 
   it("takes counts and warm-up length from config", () => {
-    const config = { mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5 } as const;
+    const config = { mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5, followUpCap: 2 } as const;
     const session = createSession({ mode: "mock", durationMinutes: 45, seed: 7 }, config);
 
     expect(session.plan).toHaveLength(3);
@@ -197,6 +198,108 @@ describe("a mock warm-up", () => {
     expect(step(started, { type: "skipWarmUp", now: 3_000 })).toEqual({
       state: started,
       effects: [],
+    });
+  });
+});
+
+describe("follow-ups", () => {
+  const startedMock = [
+    { type: "start", now: 1_000 },
+    { type: "modelReply", text: "Warm-up?", now: 2_000 },
+    { type: "skipWarmUp", now: 3_000 },
+    { type: "modelReply", text: "Question 1?", now: 4_000 },
+  ] satisfies Event[];
+  const vagueAnswer = (): Event => ({
+    type: "candidateTurn",
+    text: "It went fine.",
+    startedAt: 5_000,
+    endedAt: 9_000,
+    missingSignal: true,
+  });
+  const mockSession = () => createSession({ mode: "mock", durationMinutes: 30, seed: 7 });
+  const [first] = mockSession().plan;
+
+  it("asks a follow-up on the same competency while a STAR signal is missing", () => {
+    const played = playEvents(mockSession(), [...startedMock, vagueAnswer()]);
+
+    expect(played.effects.at(-1)).toEqual({
+      type: "generateTurn",
+      kind: "follow-up",
+      competency: first,
+    });
+  });
+
+  const answeredWithFollowUps = (count: number): Event[] =>
+    Array.from({ length: count }, (_, i): Event[] => [
+      vagueAnswer(),
+      { type: "modelReply", text: `Follow-up ${i + 1}?`, now: 10_000 + i },
+    ]).flat();
+
+  it("moves to the next planned question once the cap is reached", () => {
+    const played = playEvents(mockSession(), [
+      ...startedMock,
+      ...answeredWithFollowUps(2),
+      vagueAnswer(),
+    ]);
+
+    expect(played.effects.at(-1)).toEqual({
+      type: "generateTurn",
+      kind: "question",
+      competency: mockSession().plan[1],
+    });
+  });
+
+  it("reads the cap from config", () => {
+    const session = createSession(
+      { mode: "mock", durationMinutes: 30, seed: 7 },
+      { ...DEFAULT_ENGINE_CONFIG, followUpCap: 1 },
+    );
+    const played = playEvents(session, [...startedMock, ...answeredWithFollowUps(1), vagueAnswer()]);
+
+    expect(played.effects.at(-1)).toMatchObject({ kind: "question", competency: session.plan[1] });
+  });
+
+  it("wraps up a drill once the cap is reached on its only question", () => {
+    const played = playEvents(drill(), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Question?", now: 2_000 },
+      ...answeredWithFollowUps(2),
+      vagueAnswer(),
+    ]);
+
+    expect(played.effects.at(-1)).toMatchObject({ kind: "wrap-up" });
+  });
+
+  const completeAnswer = (): Event => ({
+    type: "candidateTurn",
+    text: "I led it, measured the result, and shipped.",
+    startedAt: 5_000,
+    endedAt: 9_000,
+    missingSignal: false,
+  });
+
+  it("moves to the next planned question after a complete answer", () => {
+    const played = playEvents(mockSession(), [...startedMock, completeAnswer()]);
+
+    expect(played.effects.at(-1)).toEqual({
+      type: "generateTurn",
+      kind: "question",
+      competency: mockSession().plan[1],
+    });
+  });
+
+  it("gives each question a fresh follow-up budget", () => {
+    const played = playEvents(mockSession(), [
+      ...startedMock,
+      ...answeredWithFollowUps(2),
+      vagueAnswer(),
+      { type: "modelReply", text: "Question 2?", now: 20_000 },
+      vagueAnswer(),
+    ]);
+
+    expect(played.effects.at(-1)).toMatchObject({
+      kind: "follow-up",
+      competency: mockSession().plan[1],
     });
   });
 });

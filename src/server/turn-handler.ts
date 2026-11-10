@@ -30,6 +30,7 @@ function parseTurnRequest(value: unknown): TurnRequest | null {
 
 const TASK_BY_KIND: Record<TurnRequest["kind"], string> = {
   question: "Ask one behavioral interview question about this competency. Output only the question.",
+  "follow-up": "Ask one short follow-up that probes the missing part of the candidate's last answer. Output only the question.",
   "warm-up": "Ask one short, friendly icebreaker question unrelated to the job. Output only the question.",
   "wrap-up": "Close the interview with one or two short sentences. Do not give feedback or scores.",
 };

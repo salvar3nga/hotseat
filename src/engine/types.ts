@@ -11,7 +11,7 @@ export type Competency = (typeof COMPETENCIES)[number];
 
 export type SessionStatus = "configured" | "in-progress" | "completed";
 
-export type TurnKind = "question" | "answer" | "wrap-up" | "warm-up" | "warm-up-skip";
+export type TurnKind = "question" | "answer" | "follow-up" | "wrap-up" | "warm-up" | "warm-up-skip";
 
 export type Turn = {
   speaker: "interviewer" | "candidate";
@@ -31,11 +31,13 @@ export type SessionConfig =
 export type EngineConfig = {
   mockCompetencyCounts: Record<MockDuration, number>;
   warmUpMinutes: number;
+  followUpCap: number;
 };
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   mockCompetencyCounts: { 30: 4, 45: 6 },
   warmUpMinutes: 3,
+  followUpCap: 2,
 };
 
 export type SessionState = {
@@ -44,6 +46,9 @@ export type SessionState = {
   seed: number;
   plan: Competency[];
   warmUpMinutes: number | null;
+  followUpCap: number;
+  questionIndex: number;
+  followUpsAsked: number;
   turns: Turn[];
   awaiting: TurnKind | null;
 };
@@ -52,9 +57,9 @@ export type Event =
   | { type: "start"; now: number }
   | { type: "modelReply"; text: string; now: number }
   | { type: "skipWarmUp"; now: number }
-  | { type: "candidateTurn"; text: string; startedAt: number; endedAt: number };
+  | { type: "candidateTurn"; text: string; startedAt: number; endedAt: number; missingSignal?: boolean };
 
-export const GENERATED_KINDS = ["question", "wrap-up", "warm-up"] as const satisfies readonly TurnKind[];
+export const GENERATED_KINDS = ["question", "follow-up", "wrap-up", "warm-up"] as const satisfies readonly TurnKind[];
 
 export type Effect = {
   type: "generateTurn";

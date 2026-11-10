@@ -48,13 +48,16 @@ export function createSession(
     seed: config.seed,
     plan: planFor(config, engineConfig),
     warmUpMinutes: config.mode === "mock" ? engineConfig.warmUpMinutes : null,
+    followUpCap: engineConfig.followUpCap,
+    questionIndex: 0,
+    followUpsAsked: 0,
     turns: [],
     awaiting: null,
   };
 }
 
-function competencyFor(kind: TurnKind, plan: Competency[]): Competency | null {
-  return kind === "warm-up" || kind === "warm-up-skip" ? null : plan[0];
+function competencyFor(kind: TurnKind, state: SessionState): Competency | null {
+  return kind === "warm-up" || kind === "warm-up-skip" ? null : state.plan[state.questionIndex];
 }
 
 function turn(
@@ -63,13 +66,22 @@ function turn(
   body: string,
   startedAt: number,
   endedAt: number,
-  plan: Competency[],
+  state: SessionState,
 ): Turn {
-  return { speaker, body, kind, startedAt, endedAt, competency: competencyFor(kind, plan) };
+  return { speaker, body, kind, startedAt, endedAt, competency: competencyFor(kind, state) };
 }
 
-function generateTurn(kind: Effect["kind"], plan: Competency[]): Effect {
-  return { type: "generateTurn", kind, competency: competencyFor(kind, plan) };
+function generateTurn(kind: Effect["kind"], state: SessionState): Effect {
+  return { type: "generateTurn", kind, competency: competencyFor(kind, state) };
+}
+
+function moveTo(
+  state: SessionState,
+  kind: Effect["kind"],
+  progress: Partial<Pick<SessionState, "questionIndex" | "followUpsAsked">> = {},
+): StepResult {
+  const next = { ...state, ...progress, awaiting: kind };
+  return { state: next, effects: [generateTurn(kind, next)] };
 }
 
 function isAnsweringWarmUp(state: SessionState): boolean {
@@ -79,7 +91,7 @@ function isAnsweringWarmUp(state: SessionState): boolean {
 function afterWarmUp(state: SessionState, warmUpReply: Turn): StepResult {
   return {
     state: { ...state, turns: [...state.turns, warmUpReply], awaiting: "question" },
-    effects: [generateTurn("question", state.plan)],
+    effects: [generateTurn("question", state)],
   };
 }
 
@@ -92,14 +104,14 @@ export function step(state: SessionState, event: Event): StepResult {
       const firstKind = state.mode === "mock" ? "warm-up" : "question";
       return {
         state: { ...state, status: "in-progress", awaiting: firstKind },
-        effects: [generateTurn(firstKind, state.plan)],
+        effects: [generateTurn(firstKind, state)],
       };
     }
     case "modelReply": {
       if (!isOneOf(GENERATED_KINDS, state.awaiting)) return ignored;
       const turns = [
         ...state.turns,
-        turn("interviewer", state.awaiting, event.text, event.now, event.now, state.plan),
+        turn("interviewer", state.awaiting, event.text, event.now, event.now, state),
       ];
       return state.awaiting === "wrap-up"
         ? { state: { ...state, turns, status: "completed", awaiting: null }, effects: [] }
@@ -109,17 +121,21 @@ export function step(state: SessionState, event: Event): StepResult {
       if (!isAnsweringWarmUp(state)) return ignored;
       return afterWarmUp(
         state,
-        turn("candidate", "warm-up-skip", "", event.now, event.now, state.plan),
+        turn("candidate", "warm-up-skip", "", event.now, event.now, state),
       );
     case "candidateTurn": {
       if (state.awaiting !== "answer") return ignored;
       const kind = isAnsweringWarmUp(state) ? "warm-up" : "answer";
-      const answer = turn("candidate", kind, event.text, event.startedAt, event.endedAt, state.plan);
+      const answer = turn("candidate", kind, event.text, event.startedAt, event.endedAt, state);
       if (kind === "warm-up") return afterWarmUp(state, answer);
-      return {
-        state: { ...state, turns: [...state.turns, answer], awaiting: "wrap-up" },
-        effects: [generateTurn("wrap-up", state.plan)],
-      };
+      const answered = { ...state, turns: [...state.turns, answer] };
+      if (event.missingSignal && state.followUpsAsked < state.followUpCap) {
+        return moveTo(answered, "follow-up", { followUpsAsked: state.followUpsAsked + 1 });
+      }
+      const hasNextQuestion = state.questionIndex + 1 < state.plan.length;
+      return hasNextQuestion
+        ? moveTo(answered, "question", { questionIndex: state.questionIndex + 1, followUpsAsked: 0 })
+        : moveTo(answered, "wrap-up");
     }
   }
 }
