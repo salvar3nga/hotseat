@@ -505,3 +505,128 @@ describe("the nudge", () => {
     expect(step(warmingUp, { type: "tick", now: 900_000 }).effects).toEqual([]);
   });
 });
+
+describe("when the clock reaches zero", () => {
+  const MINUTE = 60_000;
+  const answeringSince = 2_000;
+  const after = (ms: number) => answeringSince + ms;
+
+  const drillAnswering = () =>
+    playEvents(drill(), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Tell me about a time you owned a project.", now: answeringSince },
+    ]).state;
+
+  const mockAnsweringFirstQuestion = () =>
+    playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Warm up?", now: 1_500 },
+      { type: "skipWarmUp", now: 1_800 },
+      { type: "modelReply", text: "Question?", now: answeringSince },
+    ]).state;
+
+  const wrapUp = (competency: Effect["competency"]): Effect => ({
+    type: "generateTurn",
+    kind: "wrap-up",
+    competency,
+  });
+
+  it("asks no new question and wraps up after the answer in a mock", () => {
+    const result = step(mockAnsweringFirstQuestion(), {
+      type: "candidateTurn",
+      text: "Done.",
+      startedAt: answeringSince,
+      endedAt: after(30 * MINUTE),
+    });
+
+    expect(result.effects).toEqual([wrapUp(result.state.plan[0])]);
+    expect(result.state.awaiting).toBe("wrap-up");
+  });
+
+  it("skips the follow-up even when the answer is missing signal", () => {
+    const result = step(drillAnswering(), {
+      type: "candidateTurn",
+      text: "Partial.",
+      startedAt: answeringSince,
+      endedAt: after(10 * MINUTE),
+      missingSignal: true,
+    });
+
+    expect(result.effects).toEqual([wrapUp("ownership")]);
+  });
+
+  it("still asks a follow-up while time remains", () => {
+    const result = step(drillAnswering(), {
+      type: "candidateTurn",
+      text: "Partial.",
+      startedAt: answeringSince,
+      endedAt: after(10 * MINUTE - 1_000),
+      missingSignal: true,
+    });
+
+    expect(result.effects).toEqual([{ type: "generateTurn", kind: "follow-up", competency: "ownership" }]);
+  });
+
+  it("accepts the in-flight answer before the wrap-up", () => {
+    const wrappingUp = step(drillAnswering(), {
+      type: "candidateTurn",
+      text: "My long answer.",
+      startedAt: answeringSince,
+      endedAt: after(12 * MINUTE),
+    }).state;
+
+    expect(wrappingUp.turns.map(({ kind }) => kind)).toEqual(["question", "answer"]);
+    expect(wrappingUp.turns[1].body).toBe("My long answer.");
+  });
+
+  it("completes the session with a wrap-up turn", () => {
+    const wrappingUp = step(drillAnswering(), {
+      type: "candidateTurn",
+      text: "My long answer.",
+      startedAt: answeringSince,
+      endedAt: after(12 * MINUTE),
+    }).state;
+    const completed = step(wrappingUp, { type: "modelReply", text: "Time is up. Thank you.", now: after(12 * MINUTE + 1_000) }).state;
+
+    expect(completed.status).toBe("completed");
+    expect(completed.turns.at(-1)).toMatchObject({ kind: "wrap-up", speaker: "interviewer" });
+  });
+
+  it("wraps up instead of asking the first question after a warm-up that ran out the clock", () => {
+    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Warm up?", now: answeringSince },
+    ]).state;
+
+    const answered = step(warmingUp, {
+      type: "candidateTurn",
+      text: "Fine.",
+      startedAt: answeringSince,
+      endedAt: after(31 * MINUTE),
+    });
+    const skipped = step(warmingUp, { type: "skipWarmUp", now: after(31 * MINUTE) });
+
+    expect(answered.state.awaiting).toBe("wrap-up");
+    expect(skipped.state.awaiting).toBe("wrap-up");
+  });
+
+  it("does not count model-wait time toward zero", () => {
+    const waiting = step(drillAnswering(), {
+      type: "candidateTurn",
+      text: "Short.",
+      startedAt: answeringSince,
+      endedAt: after(1_000),
+      missingSignal: true,
+    }).state;
+    const secondAnswer = step(waiting, { type: "modelReply", text: "And?", now: after(30 * MINUTE) }).state;
+    const result = step(secondAnswer, {
+      type: "candidateTurn",
+      text: "More.",
+      startedAt: after(30 * MINUTE),
+      endedAt: after(30 * MINUTE + 5_000),
+      missingSignal: true,
+    });
+
+    expect(result.effects[0]).toMatchObject({ kind: "follow-up" });
+  });
+});

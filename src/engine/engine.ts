@@ -89,6 +89,11 @@ export function remainingMs(state: SessionState, now: number): number {
   return Math.max(0, state.clock.budgetMs - elapsedAt(state.clock, now));
 }
 
+// Zero is only ever reached mid-answer, so it is checked when that answer ends.
+function isExpiredAt(state: SessionState, now: number): boolean {
+  return remainingMs(state, now) === 0;
+}
+
 function reclock(previous: SessionState, next: SessionState, now: number): SessionState {
   const startsNewAnswer = next.awaiting === "answer" && previous.awaiting !== "answer";
   const clock = {
@@ -145,11 +150,9 @@ function canNudge(state: SessionState): boolean {
   );
 }
 
-function afterWarmUp(state: SessionState, warmUpReply: Turn): StepResult {
-  return {
-    state: { ...state, turns: [...state.turns, warmUpReply], awaiting: "question" },
-    effects: [generateTurn("question", state)],
-  };
+function afterWarmUp(state: SessionState, warmUpReply: Turn, now: number): StepResult {
+  const answered = { ...state, turns: [...state.turns, warmUpReply] };
+  return isExpiredAt(state, now) ? moveTo(answered, "wrap-up") : moveTo(answered, "question");
 }
 
 export function step(state: SessionState, event: Event): StepResult {
@@ -198,6 +201,7 @@ function transition(state: SessionState, event: Event): StepResult {
       return afterWarmUp(
         state,
         turn("candidate", "warm-up-skip", "", event.now, event.now, state),
+        event.now,
       );
     case "tabHidden":
       return state.tabHidden ? ignored : { state: { ...state, tabHidden: true }, effects: [] };
@@ -207,8 +211,9 @@ function transition(state: SessionState, event: Event): StepResult {
       if (state.awaiting !== "answer") return ignored;
       const kind = isAnsweringWarmUp(state) ? "warm-up" : "answer";
       const answer = turn("candidate", kind, event.text, event.startedAt, event.endedAt, state);
-      if (kind === "warm-up") return afterWarmUp(state, answer);
+      if (kind === "warm-up") return afterWarmUp(state, answer, event.endedAt);
       const answered = { ...state, turns: [...state.turns, answer] };
+      if (isExpiredAt(state, event.endedAt)) return moveTo(answered, "wrap-up");
       if (event.missingSignal && state.followUpsAsked < state.followUpCap) {
         return moveTo(answered, "follow-up", { followUpsAsked: state.followUpsAsked + 1 });
       }
