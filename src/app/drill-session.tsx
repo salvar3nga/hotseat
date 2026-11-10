@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createSession, remainingMs, step } from "../engine/engine";
+import { isGenerateTurn } from "../engine/types";
 import type { Event, SessionState, StepResult, TurnRequest } from "../engine/types";
 
 async function requestModelText({ state, effects }: StepResult): Promise<string> {
-  const [effect] = effects;
+  const effect = effects.find(isGenerateTurn);
+  if (!effect) throw new Error("No interviewer turn to generate.");
   const body: TurnRequest = {
     kind: effect.kind,
     competency: effect.competency,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createSession, remainingMs, step } from "./engine";
 import { DEFAULT_ENGINE_CONFIG } from "./types";
-import type { Effect, Event, SessionState } from "./types";
+import type { Effect, Event, GenerateTurnEffect, SessionState } from "./types";
 
 describe("createSession", () => {
   it("starts configured", () => {
@@ -525,7 +525,7 @@ describe("when the clock reaches zero", () => {
       { type: "modelReply", text: "Question?", now: answeringSince },
     ]).state;
 
-  const wrapUp = (competency: Effect["competency"]): Effect => ({
+  const wrapUp = (competency: GenerateTurnEffect["competency"]): Effect => ({
     type: "generateTurn",
     kind: "wrap-up",
     competency,
@@ -628,5 +628,101 @@ describe("when the clock reaches zero", () => {
     });
 
     expect(result.effects[0]).toMatchObject({ kind: "follow-up" });
+  });
+});
+
+describe("stopping a session", () => {
+  const drillAnswering = (events: Event[] = []) =>
+    playEvents(drill(), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Tell me about a time you owned a project.", now: 2_000 },
+      ...events,
+    ]).state;
+
+  const answered: Event = { type: "candidateTurn", text: "I led it.", startedAt: 2_000, endedAt: 30_000, missingSignal: true };
+  const followUp: Event = { type: "modelReply", text: "And the result?", now: 31_000 };
+
+  it("completes with a partial debrief handoff after a scored answer", () => {
+    const result = step(drillAnswering([answered, followUp]), { type: "stop", now: 40_000 });
+
+    expect(result.state.status).toBe("completed");
+    expect(result.effects).toEqual([
+      {
+        type: "buildDebrief",
+        transcript: [
+          { speaker: "interviewer", body: "Tell me about a time you owned a project." },
+          { speaker: "candidate", body: "I led it." },
+          { speaker: "interviewer", body: "And the result?" },
+        ],
+      },
+    ]);
+  });
+
+  it("completes when stopped while the wrap-up is still being generated", () => {
+    const result = step(drillAnswering([{ ...answered, missingSignal: false }]), { type: "stop", now: 40_000 });
+
+    expect(result.state.status).toBe("completed");
+    expect(result.effects).toHaveLength(1);
+  });
+
+  it("abandons with no debrief when nothing was answered", () => {
+    const result = step(drillAnswering(), { type: "stop", now: 5_000 });
+
+    expect(result.state.status).toBe("abandoned");
+    expect(result.effects).toEqual([]);
+  });
+
+  it("abandons when the only candidate turns are a skipped warm-up", () => {
+    const state = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Warm up?", now: 1_500 },
+      { type: "skipWarmUp", now: 1_800 },
+      { type: "modelReply", text: "Question?", now: 2_000 },
+    ]).state;
+
+    expect(step(state, { type: "stop", now: 5_000 }).state.status).toBe("abandoned");
+  });
+
+  it("abandons when the candidate only answered the warm-up", () => {
+    const state = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Warm up?", now: 1_500 },
+      { type: "candidateTurn", text: "Fine.", startedAt: 1_500, endedAt: 2_000 },
+      { type: "modelReply", text: "Question?", now: 2_500 },
+    ]).state;
+
+    expect(step(state, { type: "stop", now: 5_000 }).state.status).toBe("abandoned");
+  });
+
+  it("does not treat a nudge as a scored answer", () => {
+    const nudged = drillAnswering([
+      { type: "tick", now: 2_000 + 3 * 60_000 },
+      { type: "nudgeReply", text: "Wrap up.", now: 2_000 + 3 * 60_000 + 500 },
+    ]);
+
+    expect(step(nudged, { type: "stop", now: 300_000 }).state.status).toBe("abandoned");
+  });
+
+  it("ignores a late model reply once stopped", () => {
+    const stopped = step(drillAnswering([answered]), { type: "stop", now: 40_000 }).state;
+
+    expect(step(stopped, { type: "modelReply", text: "Late.", now: 41_000 })).toEqual({
+      state: stopped,
+      effects: [],
+    });
+  });
+
+  it("stops the clock", () => {
+    const stopped = step(drillAnswering(), { type: "stop", now: 12_000 }).state;
+
+    expect(remainingMs(stopped, 12_000)).toBe(remainingMs(stopped, 900_000));
+  });
+
+  it("ignores a stop before the session starts and after it has ended", () => {
+    const configured = drill();
+    const completed = playEvents(drill(), scriptedDrill).state;
+
+    expect(step(configured, { type: "stop", now: 1_000 })).toEqual({ state: configured, effects: [] });
+    expect(step(completed, { type: "stop", now: 99_000 })).toEqual({ state: completed, effects: [] });
   });
 });

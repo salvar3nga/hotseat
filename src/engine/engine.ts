@@ -1,7 +1,7 @@
 import { COMPETENCIES, DEFAULT_ENGINE_CONFIG, GENERATED_KINDS, isOneOf } from "./types";
 import type {
   Competency,
-  Effect,
+  GenerateTurnEffect,
   EngineConfig,
   Event,
   SessionClock,
@@ -124,13 +124,13 @@ function turn(
   return { speaker, body, kind, startedAt, endedAt, competency: competencyFor(kind, state) };
 }
 
-function generateTurn(kind: Effect["kind"], state: SessionState): Effect {
+function generateTurn(kind: GenerateTurnEffect["kind"], state: SessionState): GenerateTurnEffect {
   return { type: "generateTurn", kind, competency: competencyFor(kind, state) };
 }
 
 function moveTo(
   state: SessionState,
-  kind: Effect["kind"],
+  kind: GenerateTurnEffect["kind"],
   progress: Partial<Pick<SessionState, "questionIndex" | "followUpsAsked">> = {},
 ): StepResult {
   const next = { ...state, ...progress, awaiting: kind };
@@ -139,6 +139,10 @@ function moveTo(
 
 function isAnsweringWarmUp(state: SessionState): boolean {
   return state.awaiting === "answer" && state.turns.at(-1)?.kind === "warm-up";
+}
+
+function hasScoredAnswer(state: SessionState): boolean {
+  return state.turns.some(({ kind }) => kind === "answer");
 }
 
 function canNudge(state: SessionState): boolean {
@@ -182,6 +186,16 @@ function transition(state: SessionState, event: Event): StepResult {
       return state.awaiting === "wrap-up"
         ? { state: { ...state, turns, status: "completed", awaiting: null }, effects: [] }
         : { state: { ...state, turns, awaiting: "answer", nudge: "idle" }, effects: [] };
+    }
+    case "stop": {
+      if (state.status !== "in-progress") return ignored;
+      const stopped = { ...state, awaiting: null };
+      return hasScoredAnswer(state)
+        ? {
+            state: { ...stopped, status: "completed" },
+            effects: [{ type: "buildDebrief", transcript: state.turns.map(({ speaker, body }) => ({ speaker, body })) }],
+          }
+        : { state: { ...stopped, status: "abandoned" }, effects: [] };
     }
     case "tick": {
       const overBudget = answerElapsedAt(state.clock, event.now) >= state.nudgeBudgetMs;

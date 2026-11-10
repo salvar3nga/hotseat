@@ -9,7 +9,7 @@ export const COMPETENCIES = [
 
 export type Competency = (typeof COMPETENCIES)[number];
 
-export type SessionStatus = "configured" | "in-progress" | "completed";
+export type SessionStatus = "configured" | "in-progress" | "completed" | "abandoned";
 
 export type TurnKind = "question" | "answer" | "follow-up" | "wrap-up" | "warm-up" | "warm-up-skip" | "nudge";
 
@@ -75,6 +75,7 @@ export type Event =
   | { type: "modelReply"; text: string; now: number }
   | { type: "skipWarmUp"; now: number }
   | { type: "tick"; now: number }
+  | { type: "stop"; now: number }
   | { type: "nudgeReply"; text: string; now: number }
   | { type: "tabHidden"; now: number }
   | { type: "tabVisible"; now: number }
@@ -82,18 +83,28 @@ export type Event =
 
 export const GENERATED_KINDS = ["question", "follow-up", "wrap-up", "warm-up", "nudge"] as const satisfies readonly TurnKind[];
 
-export type Effect = {
+export type TranscriptEntry = Pick<Turn, "speaker" | "body">;
+
+export type GenerateTurnEffect = {
   type: "generateTurn";
   kind: (typeof GENERATED_KINDS)[number];
   competency: Competency | null;
 };
 
+export type BuildDebriefEffect = { type: "buildDebrief"; transcript: TranscriptEntry[] };
+
+export type Effect = GenerateTurnEffect | BuildDebriefEffect;
+
+export function isGenerateTurn(effect: Effect): effect is GenerateTurnEffect {
+  return effect.type === "generateTurn";
+}
+
 export type StepResult = { state: SessionState; effects: Effect[] };
 
 export type TurnRequest = {
-  kind: Effect["kind"];
+  kind: GenerateTurnEffect["kind"];
   competency: Competency | null;
-  transcript: Pick<Turn, "speaker" | "body">[];
+  transcript: TranscriptEntry[];
 };
 
 export function isOneOf<T extends string>(options: readonly T[], value: unknown): value is T {
