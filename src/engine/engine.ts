@@ -52,12 +52,14 @@ export function createSession(
     plan: planFor(config, engineConfig),
     warmUpMinutes: config.mode === "mock" ? engineConfig.warmUpMinutes : null,
     followUpCap: engineConfig.followUpCap,
+    nudgeBudgetMs: engineConfig.nudgeMinutes[config.mode] * MS_PER_MINUTE,
     questionIndex: 0,
     followUpsAsked: 0,
     turns: [],
     awaiting: null,
-    clock: { budgetMs: budgetMinutes(config, engineConfig) * MS_PER_MINUTE, elapsedMs: 0, runningSince: null },
+    clock: { budgetMs: budgetMinutes(config, engineConfig) * MS_PER_MINUTE, elapsedMs: 0, answerElapsedMs: 0, runningSince: null },
     tabHidden: false,
+    nudge: "idle",
   };
 }
 
@@ -71,8 +73,16 @@ function isClockRunning(state: SessionState): boolean {
   return state.status === "in-progress" && state.awaiting === "answer" && !state.tabHidden;
 }
 
+function runningMsAt(clock: SessionClock, now: number): number {
+  return clock.runningSince === null ? 0 : Math.max(0, now - clock.runningSince);
+}
+
 function elapsedAt(clock: SessionClock, now: number): number {
-  return clock.elapsedMs + (clock.runningSince === null ? 0 : Math.max(0, now - clock.runningSince));
+  return clock.elapsedMs + runningMsAt(clock, now);
+}
+
+function answerElapsedAt(clock: SessionClock, now: number): number {
+  return clock.answerElapsedMs + runningMsAt(clock, now);
 }
 
 export function remainingMs(state: SessionState, now: number): number {
@@ -80,9 +90,11 @@ export function remainingMs(state: SessionState, now: number): number {
 }
 
 function reclock(previous: SessionState, next: SessionState, now: number): SessionState {
+  const startsNewAnswer = next.awaiting === "answer" && previous.awaiting !== "answer";
   const clock = {
     ...next.clock,
     elapsedMs: elapsedAt(previous.clock, now),
+    answerElapsedMs: startsNewAnswer ? 0 : answerElapsedAt(previous.clock, now),
     runningSince: isClockRunning(next) ? now : null,
   };
   return { ...next, clock };
@@ -124,6 +136,15 @@ function isAnsweringWarmUp(state: SessionState): boolean {
   return state.awaiting === "answer" && state.turns.at(-1)?.kind === "warm-up";
 }
 
+function canNudge(state: SessionState): boolean {
+  return (
+    state.status === "in-progress" &&
+    state.awaiting === "answer" &&
+    state.nudge === "idle" &&
+    !isAnsweringWarmUp(state)
+  );
+}
+
 function afterWarmUp(state: SessionState, warmUpReply: Turn): StepResult {
   return {
     state: { ...state, turns: [...state.turns, warmUpReply], awaiting: "question" },
@@ -157,7 +178,20 @@ function transition(state: SessionState, event: Event): StepResult {
       ];
       return state.awaiting === "wrap-up"
         ? { state: { ...state, turns, status: "completed", awaiting: null }, effects: [] }
-        : { state: { ...state, turns, awaiting: "answer" }, effects: [] };
+        : { state: { ...state, turns, awaiting: "answer", nudge: "idle" }, effects: [] };
+    }
+    case "tick": {
+      const overBudget = answerElapsedAt(state.clock, event.now) >= state.nudgeBudgetMs;
+      if (!canNudge(state) || !overBudget) return ignored;
+      return {
+        state: { ...state, nudge: "requested" },
+        effects: [generateTurn("nudge", state)],
+      };
+    }
+    case "nudgeReply": {
+      if (state.awaiting !== "answer" || state.nudge !== "requested") return ignored;
+      const nudgeTurn = turn("interviewer", "nudge", event.text, event.now, event.now, state);
+      return { state: { ...state, turns: [...state.turns, nudgeTurn], nudge: "sent" }, effects: [] };
     }
     case "skipWarmUp":
       if (!isAnsweringWarmUp(state)) return ignored;

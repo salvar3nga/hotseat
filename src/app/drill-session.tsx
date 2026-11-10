@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createSession, remainingMs, step } from "../engine/engine";
-import type { SessionState, StepResult, TurnRequest } from "../engine/types";
+import type { Event, SessionState, StepResult, TurnRequest } from "../engine/types";
 
 async function requestModelText({ state, effects }: StepResult): Promise<string> {
   const [effect] = effects;
@@ -49,26 +49,52 @@ export function DrillSession() {
   const state: SessionState | null = progress?.state ?? null;
   const replyPending = !busy && progress !== null && progress.effects.length > 0;
 
-  function commit(next: StepResult) {
+  const commit = useCallback((next: StepResult) => {
     latestProgress.current = next;
     setProgress(next);
-  }
+  }, []);
+
+  // Events that never owe the model a turn leave the pending effects untouched.
+  const observe = useCallback(
+    (event: Event): StepResult | null => {
+      const current = latestProgress.current;
+      if (!current) return null;
+      const result = step(current.state, event);
+      if (result.state !== current.state) commit({ state: result.state, effects: current.effects });
+      return result;
+    },
+    [commit],
+  );
+
+  const deliverNudge = useCallback(
+    async (request: StepResult) => {
+      try {
+        const text = await requestModelText(request);
+        observe({ type: "nudgeReply", text, now: Date.now() });
+      } catch {
+        // A missed nudge is harmless: the engine will not ask again for this answer.
+      }
+    },
+    [observe],
+  );
 
   useEffect(() => {
     function reportTabVisibility() {
-      const current = latestProgress.current;
-      if (!current) return;
-      const type = document.hidden ? "tabHidden" : "tabVisible";
-      commit({ state: step(current.state, { type, now: Date.now() }).state, effects: current.effects });
+      observe({ type: document.hidden ? "tabHidden" : "tabVisible", now: Date.now() });
     }
     document.addEventListener("visibilitychange", reportTabVisibility);
     return () => document.removeEventListener("visibilitychange", reportTabVisibility);
-  }, []);
+  }, [observe]);
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000);
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setNow(now);
+      const ticked = observe({ type: "tick", now });
+      if (ticked && ticked.effects.length > 0) void deliverNudge(ticked);
+    }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [observe, deliverNudge]);
 
   async function advance(next: StepResult) {
     commit(next);
@@ -91,10 +117,11 @@ export function DrillSession() {
 
   function submitAnswer() {
     const text = answer.trim();
-    if (!state || !text) return;
+    const latest = latestProgress.current?.state;
+    if (!latest || !text) return;
     setAnswer("");
     void advance(
-      step(state, {
+      step(latest, {
         type: "candidateTurn",
         text,
         startedAt: answerStartedAt ?? Date.now(),

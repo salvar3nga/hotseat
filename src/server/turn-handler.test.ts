@@ -60,6 +60,24 @@ describe("POST /api/turn", () => {
     ]);
   });
 
+  it("asks for an in-character nudge and ends on a user message while the candidate is still answering", async () => {
+    const generate = vi.fn<GenerateReply>(async () => "Let's move toward the result.");
+    const handler = createTurnHandler(generate);
+
+    const response = await handler(
+      post({
+        kind: "nudge",
+        competency: "ownership",
+        transcript: [{ speaker: "interviewer", body: "Tell me about a project you owned." }],
+      }),
+    );
+
+    const { instructions, messages } = generate.mock.calls[0][0];
+    expect(response.status).toBe(200);
+    expect(instructions).toContain("move on");
+    expect(messages.at(-1)?.role).toBe("user");
+  });
+
   it("rejects a malformed request without calling the model", async () => {
     const generate = vi.fn(async () => "unused");
     const handler = createTurnHandler(generate);

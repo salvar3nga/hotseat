@@ -11,7 +11,7 @@ export type Competency = (typeof COMPETENCIES)[number];
 
 export type SessionStatus = "configured" | "in-progress" | "completed";
 
-export type TurnKind = "question" | "answer" | "follow-up" | "wrap-up" | "warm-up" | "warm-up-skip";
+export type TurnKind = "question" | "answer" | "follow-up" | "wrap-up" | "warm-up" | "warm-up-skip" | "nudge";
 
 export type Turn = {
   speaker: "interviewer" | "candidate";
@@ -33,6 +33,7 @@ export type EngineConfig = {
   warmUpMinutes: number;
   followUpCap: number;
   drillMinutes: number;
+  nudgeMinutes: Record<SessionConfig["mode"], number>;
 };
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
@@ -40,13 +41,17 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   warmUpMinutes: 3,
   followUpCap: 2,
   drillMinutes: 10,
+  nudgeMinutes: { mock: 2.5, drill: 3 },
 };
 
 export type SessionClock = {
   budgetMs: number;
   elapsedMs: number;
+  answerElapsedMs: number;
   runningSince: number | null;
 };
+
+export type NudgeStatus = "idle" | "requested" | "sent";
 
 export type SessionState = {
   mode: SessionConfig["mode"];
@@ -55,23 +60,27 @@ export type SessionState = {
   plan: Competency[];
   warmUpMinutes: number | null;
   followUpCap: number;
+  nudgeBudgetMs: number;
   questionIndex: number;
   followUpsAsked: number;
   turns: Turn[];
   awaiting: TurnKind | null;
   clock: SessionClock;
   tabHidden: boolean;
+  nudge: NudgeStatus;
 };
 
 export type Event =
   | { type: "start"; now: number }
   | { type: "modelReply"; text: string; now: number }
   | { type: "skipWarmUp"; now: number }
+  | { type: "tick"; now: number }
+  | { type: "nudgeReply"; text: string; now: number }
   | { type: "tabHidden"; now: number }
   | { type: "tabVisible"; now: number }
   | { type: "candidateTurn"; text: string; startedAt: number; endedAt: number; missingSignal?: boolean };
 
-export const GENERATED_KINDS = ["question", "follow-up", "wrap-up", "warm-up"] as const satisfies readonly TurnKind[];
+export const GENERATED_KINDS = ["question", "follow-up", "wrap-up", "warm-up", "nudge"] as const satisfies readonly TurnKind[];
 
 export type Effect = {
   type: "generateTurn";

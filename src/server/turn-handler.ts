@@ -32,6 +32,7 @@ const TASK_BY_KIND: Record<TurnRequest["kind"], string> = {
   question: "Ask one behavioral interview question about this competency. Output only the question.",
   "follow-up": "Ask one short follow-up that probes the missing part of the candidate's last answer. Output only the question.",
   "warm-up": "Ask one short, friendly icebreaker question unrelated to the job. Output only the question.",
+  nudge: "The candidate has been answering for a while. In one short, friendly sentence, invite them to move on and wrap up their point. Do not ask a new question.",
   "wrap-up": "Close the interview with one or two short sentences. Do not give feedback or scores.",
 };
 
@@ -46,14 +47,20 @@ function instructionsFor({ kind, competency }: TurnRequest): string {
 // Anthropic requires the conversation to open with a user message.
 const OPENING_MESSAGE = "I am ready. Please begin.";
 
+// A nudge is requested mid-answer, so the transcript ends on the interviewer's turn.
+const STILL_ANSWERING_MESSAGE = "[The candidate is still answering.]";
+
 function toMessages(transcript: TranscriptEntry[]): ModelRequest["messages"] {
-  return [
-    { role: "user", content: OPENING_MESSAGE },
+  const messages = [
+    { role: "user" as const, content: OPENING_MESSAGE },
     ...transcript.map((entry) => ({
       role: entry.speaker === "interviewer" ? ("assistant" as const) : ("user" as const),
       content: entry.body,
     })),
   ];
+  return messages.at(-1)?.role === "assistant"
+    ? [...messages, { role: "user", content: STILL_ANSWERING_MESSAGE }]
+    : messages;
 }
 
 export function createTurnHandler(generate: GenerateReply) {

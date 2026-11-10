@@ -40,7 +40,7 @@ describe("createSession in mock mode", () => {
   });
 
   it("takes counts and warm-up length from config", () => {
-    const config = { mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5, followUpCap: 2, drillMinutes: 10 } as const;
+    const config = { mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5, followUpCap: 2, drillMinutes: 10, nudgeMinutes: { mock: 2.5, drill: 3 } } as const;
     const session = createSession({ mode: "mock", durationMinutes: 45, seed: 7 }, config);
 
     expect(session.plan).toHaveLength(3);
@@ -379,5 +379,129 @@ describe("the session clock", () => {
     const state = awaitingAnswer();
 
     expect(step(state, { type: "tabVisible", now: 9_000 })).toEqual({ state, effects: [] });
+  });
+});
+
+describe("the nudge", () => {
+  const answeringSince = 2_000;
+  const at = (seconds: number) => answeringSince + seconds * 1_000;
+  const nudgeEffect: Effect = { type: "generateTurn", kind: "nudge", competency: "ownership" };
+
+  const drillAnswering = (events: Event[] = []) =>
+    playEvents(drill(), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Tell me about a time you owned a project.", now: answeringSince },
+      ...events,
+    ]).state;
+
+  const mockAnswering = () =>
+    playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Warm up?", now: 1_500 },
+      { type: "skipWarmUp", now: 1_800 },
+      { type: "modelReply", text: "Question?", now: answeringSince },
+    ]).state;
+
+  it("asks for a nudge once a drill answer passes 3 minutes", () => {
+    expect(step(drillAnswering(), { type: "tick", now: at(179) }).effects).toEqual([]);
+    expect(step(drillAnswering(), { type: "tick", now: at(180) }).effects).toEqual([nudgeEffect]);
+  });
+
+  it("asks for a nudge once a mock answer passes 2.5 minutes", () => {
+    expect(step(mockAnswering(), { type: "tick", now: at(149) }).effects).toEqual([]);
+    expect(step(mockAnswering(), { type: "tick", now: at(150) }).effects).toHaveLength(1);
+  });
+
+  it("takes the budget from config", () => {
+    const config = { ...DEFAULT_ENGINE_CONFIG, nudgeMinutes: { mock: 1, drill: 1 } };
+    const state = playEvents(createSession({ mode: "drill", seed: 7 }, config), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Q", now: answeringSince },
+    ]).state;
+
+    expect(step(state, { type: "tick", now: at(60) }).effects).toHaveLength(1);
+  });
+
+  it("records the nudge as an interviewer turn and keeps waiting for the answer", () => {
+    const requested = step(drillAnswering(), { type: "tick", now: at(180) }).state;
+    const nudged = step(requested, { type: "nudgeReply", text: "Let's wrap this one up.", now: at(182) }).state;
+
+    expect(nudged.turns.at(-1)).toEqual({
+      speaker: "interviewer",
+      body: "Let's wrap this one up.",
+      kind: "nudge",
+      startedAt: at(182),
+      endedAt: at(182),
+      competency: "ownership",
+    });
+    expect(nudged.awaiting).toBe("answer");
+  });
+
+  it("asks for only one nudge per answer", () => {
+    const requested = step(drillAnswering(), { type: "tick", now: at(180) }).state;
+    const delivered = step(requested, { type: "nudgeReply", text: "Wrap up.", now: at(181) }).state;
+
+    expect(step(requested, { type: "tick", now: at(400) }).effects).toEqual([]);
+    expect(step(delivered, { type: "tick", now: at(800) }).effects).toEqual([]);
+  });
+
+  it("lets the candidate keep answering after the nudge", () => {
+    const requested = step(drillAnswering(), { type: "tick", now: at(180) }).state;
+    const delivered = step(requested, { type: "nudgeReply", text: "Wrap up.", now: at(181) }).state;
+    const answered = step(delivered, { type: "candidateTurn", text: "Done.", startedAt: at(0), endedAt: at(200) });
+
+    expect(answered.state.turns.at(-1)?.kind).toBe("answer");
+    expect(answered.effects).toEqual([{ type: "generateTurn", kind: "wrap-up", competency: "ownership" }]);
+  });
+
+  it("drops a nudge that arrives after the candidate has answered", () => {
+    const requested = step(drillAnswering(), { type: "tick", now: at(180) }).state;
+    const answered = step(requested, { type: "candidateTurn", text: "Done.", startedAt: at(0), endedAt: at(181) }).state;
+
+    expect(step(answered, { type: "nudgeReply", text: "Late.", now: at(182) })).toEqual({
+      state: answered,
+      effects: [],
+    });
+  });
+
+  it("gives each new answer its own budget and its own nudge", () => {
+    const requested = step(drillAnswering(), { type: "tick", now: at(180) }).state;
+    const delivered = step(requested, { type: "nudgeReply", text: "Wrap up.", now: at(181) }).state;
+    const askedFollowUp = step(delivered, {
+      type: "candidateTurn",
+      text: "Partial.",
+      startedAt: at(0),
+      endedAt: at(190),
+      missingSignal: true,
+    }).state;
+    const secondAnswer = step(askedFollowUp, { type: "modelReply", text: "And the result?", now: at(195) }).state;
+
+    expect(step(secondAnswer, { type: "tick", now: at(195 + 179) }).effects).toEqual([]);
+    expect(step(secondAnswer, { type: "tick", now: at(195 + 180) }).effects).toHaveLength(1);
+  });
+
+  it("does not count time away from the tab toward the budget", () => {
+    const returned = drillAnswering([
+      { type: "tabHidden", now: at(100) },
+      { type: "tabVisible", now: at(1_000) },
+    ]);
+
+    expect(step(returned, { type: "tick", now: at(1_079) }).effects).toEqual([]);
+    expect(step(returned, { type: "tick", now: at(1_080) }).effects).toHaveLength(1);
+  });
+
+  it("does not nudge while the model is expected to speak", () => {
+    const started = playEvents(drill(), [{ type: "start", now: 1_000 }]).state;
+
+    expect(step(started, { type: "tick", now: 900_000 })).toEqual({ state: started, effects: [] });
+  });
+
+  it("does not nudge a warm-up answer", () => {
+    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Warm up?", now: 1_500 },
+    ]).state;
+
+    expect(step(warmingUp, { type: "tick", now: 900_000 }).effects).toEqual([]);
   });
 });
