@@ -247,16 +247,31 @@ p {
   font-size: 0.9375rem;
 }
 
-.level-select {
-  min-height: 2.75rem;
-  min-width: 12rem;
-  padding: 0 0.75rem;
-  font: inherit;
-  color: var(--ink);
+.level-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.level-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.625rem 0.875rem;
   background: var(--sheet);
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--rule);
   border-radius: var(--radius);
-  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.level-option:has(input:checked) {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.level-option:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .bands-bar {
@@ -449,6 +464,10 @@ p {
 }
 
 @media (max-width: 36rem) {
+  .level-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .session-grid {
     grid-template-columns: minmax(0, 1fr);
   }

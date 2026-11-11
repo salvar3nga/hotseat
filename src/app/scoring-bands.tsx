@@ -19,7 +19,7 @@ export function ScoringBands({ level }: { level: Level }) {
   ];
   return (
     <section aria-label="How you will be judged">
-      <p className="bands-bar">
+      <p className="bands-bar" role="status">
         Hiring bar for {level}: {hire} out of 100.
       </p>
       <ol className="band-scale">

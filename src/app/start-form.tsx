@@ -7,6 +7,13 @@ import { DEFAULT_ENGINE_CONFIG, DEFAULT_STYLE, INTERVIEWER_STYLES } from "../eng
 import type { InterviewerStyle } from "../engine/types";
 import { ScoringBands } from "./scoring-bands";
 
+const LEVEL_YEARS: Record<Level, string> = {
+  junior: "0 to 2 years",
+  mid: "2 to 5 years",
+  senior: "5 to 8 years",
+  staff: "8+ years",
+};
+
 type StartFormProps = { onStart: (style: InterviewerStyle) => void; disabled: boolean };
 
 export function StartForm({ onStart, disabled }: StartFormProps) {
@@ -39,21 +46,25 @@ export function StartForm({ onStart, disabled }: StartFormProps) {
         ))}
       </fieldset>
 
-      <div>
-        <label className="field-label" htmlFor="level">
-          Level
-        </label>
-        <select
-          id="level"
-          className="level-select"
-          value={level}
-          onChange={(event) => setLevel(event.target.value as Level)}
-        >
+      <fieldset>
+        <legend>Level</legend>
+        <div className="level-options">
           {LEVELS.map((option) => (
-            <option key={option}>{option}</option>
+            <label key={option} className="level-option">
+              <input
+                className="visually-hidden"
+                type="radio"
+                name="level"
+                value={option}
+                checked={level === option}
+                onChange={() => setLevel(option)}
+              />
+              <span className="choice-name">{option}</span>
+              <span className="choice-note">{LEVEL_YEARS[option]}</span>
+            </label>
           ))}
-        </select>
-      </div>
+        </div>
+      </fieldset>
 
       <ScoringBands level={level} />
 

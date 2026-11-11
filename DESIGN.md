@@ -209,7 +209,7 @@ Flat by default. Depth is conveyed by ink outlines and the sheet-on-cardstock to
 
 ## Shapes
 
-Softly squared forms with firm outlines. Standard radius 0.5rem for buttons, inputs, selects, banners, choice rows, the answer box and the bands scale. Larger 0.75rem for panels and the timing card. Tags use 0.25rem. Borders are 1.5px ink for interactive and structural elements, 1.5px rule for passive containers (banner, choice rows), 1px rule for transcript dividers and candidate turns. The header rule and alert border are 2px ink. No pills, no circles.
+Softly squared forms with firm outlines. Standard radius 0.5rem for buttons, inputs, banners, choice rows, the answer box and the bands scale. Larger 0.75rem for panels and the timing card. Tags use 0.25rem. Borders are 1.5px ink for interactive and structural elements, 1.5px rule for passive containers (banner, choice rows), 1px rule for transcript dividers and candidate turns. The header rule and alert border are 2px ink. No pills, no circles.
 
 ## Components
 
@@ -227,7 +227,7 @@ Softly squared forms with firm outlines. Standard radius 0.5rem for buttons, inp
 
 ### Inputs / Fields
 - **Answer box:** Sheet White, 1.5px ink border, 0.5rem radius, 1rem padding, 14rem minimum height. Disabled: Tint ground, Hairline border, Soft Ink text, no resize.
-- **Level select:** 2.75rem high, 12rem minimum width, ink border, capitalised options.
+- **Level options:** four side-by-side radio segments (two by two at 36rem and below), each with the level name and its years of experience. Same selected treatment as the style rows (ink border plus inset ring). The input is visually hidden and the segment shows the focus ring.
 - **Style choice rows:** radio with bold capitalised name and a Soft Ink note; Hairline border at rest, ink border plus Choice Ring when checked.
 - **Focus:** global 3px Focus Blue outline, 2px offset.
 
