@@ -6,6 +6,8 @@ import { isGenerateTurn } from "../engine/types";
 import type { AssessmentRequest, Event, SessionState, StepResult, TurnRequest } from "../engine/types";
 import { indexedDbSnapshotStore } from "../persistence/indexeddb-snapshot-store";
 import { createSessionSnapshots } from "../persistence/session-snapshot";
+import { readAssessment, readTurn } from "./model-responses";
+import { SampleDebrief } from "./sample-debrief";
 
 const snapshots = createSessionSnapshots(indexedDbSnapshotStore);
 
@@ -13,6 +15,8 @@ const snapshots = createSessionSnapshots(indexedDbSnapshotStore);
 function ignoreFailure(operation: Promise<unknown>): void {
   operation.catch(() => undefined);
 }
+
+class SpendCapReached extends Error {}
 
 async function requestModelText({ state, effects }: StepResult): Promise<string> {
   const effect = effects.find(isGenerateTurn);
@@ -23,9 +27,17 @@ async function requestModelText({ state, effects }: StepResult): Promise<string>
     transcript: state.turns.map(({ speaker, body }) => ({ speaker, body })),
   };
   const response = await fetch("/api/turn", { method: "POST", body: JSON.stringify(body) });
-  if (!response.ok) throw new Error("The interviewer could not respond.");
-  const { text } = (await response.json()) as { text: string };
-  return text;
+  const outcome = await readTurn(response);
+  switch (outcome.kind) {
+    case "text":
+      return outcome.text;
+    case "rate-limited":
+      throw new Error(outcome.message);
+    case "spend-cap":
+      throw new SpendCapReached();
+    case "failed":
+      throw new Error("The interviewer could not respond.");
+  }
 }
 
 // A failed assessment counts as a complete answer so it never blocks the session.
@@ -39,9 +51,7 @@ async function assessMissingSignal(state: SessionState, answer: string): Promise
   };
   try {
     const response = await fetch("/api/assess", { method: "POST", body: JSON.stringify(body) });
-    if (!response.ok) return false;
-    const { missingSignal } = (await response.json()) as { missingSignal: boolean };
-    return missingSignal === true;
+    return await readAssessment(response);
   } catch {
     return false;
   }
@@ -73,6 +83,7 @@ export function DrillSession() {
   const [answerStartedAt, setAnswerStartedAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [spendCapReached, setSpendCapReached] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [resumable, setResumable] = useState<StepResult | null | undefined>(undefined);
   const latestProgress = useRef<StepResult | null>(null);
@@ -144,7 +155,8 @@ export function DrillSession() {
       await runUntilIdle(() => latestProgress.current ?? next, commit);
       setAnswerStartedAt(Date.now());
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Something went wrong.");
+      if (failure instanceof SpendCapReached) setSpendCapReached(true);
+      else setError(failure instanceof Error ? failure.message : "Something went wrong.");
     } finally {
       setBusy(false);
     }
@@ -217,9 +229,10 @@ export function DrillSession() {
         </ol>
       )}
 
+      {spendCapReached && <SampleDebrief />}
       {busy && <p>Waiting for the interviewer…</p>}
       {error && <p role="alert">{error}</p>}
-      {replyPending && progress && <button onClick={() => void advance(progress)}>Retry</button>}
+      {replyPending && progress && !spendCapReached && <button onClick={() => void advance(progress)}>Retry</button>}
 
       {state?.awaiting === "answer" && !busy && (
         <form
