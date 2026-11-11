@@ -44,6 +44,8 @@
 
 **Follow-up cap**: Maximum follow-ups on one question before the engine moves on (2 by default, config).
 
+**Missing signal**: A STAR signal (situation, task, action or result) that an answer leaves out or keeps too vague. The browser asks a separate model call after each non-warm-up answer, which returns yes or no and shows nothing to the candidate. A yes triggers a follow-up until the follow-up cap is reached. If the call fails, the answer counts as complete.
+
 **Wrap-up**: The interviewer's closing turn. When the clock hits zero no new question is asked, the current answer finishes, then the wrap-up.
 
 **Snapshot**: The in-progress session saved to IndexedDB after every turn, one slot per browser, expiring after 24 hours. Deleted when the session ends and by "delete all history". Time waiting on the model and time away from the tab do not count against the clock.

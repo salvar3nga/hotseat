@@ -161,7 +161,7 @@ function moveTo(
   return { state: next, effects: [generateTurn(kind, next)] };
 }
 
-function isAnsweringWarmUp(state: SessionState): boolean {
+export function isAnsweringWarmUp(state: SessionState): boolean {
   return state.awaiting === "answer" && state.turns.at(-1)?.kind === "warm-up";
 }
 

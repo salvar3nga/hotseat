@@ -118,6 +118,11 @@ export type TurnRequest = {
   transcript: TranscriptEntry[];
 };
 
+export type AssessmentRequest = {
+  competency: Competency;
+  transcript: TranscriptEntry[];
+};
+
 export function isOneOf<T extends string>(options: readonly T[], value: unknown): value is T {
   return typeof value === "string" && (options as readonly string[]).includes(value);
 }

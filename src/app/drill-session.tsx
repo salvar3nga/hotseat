@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createSession, remainingMs, step } from "../engine/engine";
+import { createSession, isAnsweringWarmUp, remainingMs, step } from "../engine/engine";
 import { isGenerateTurn } from "../engine/types";
-import type { Event, SessionState, StepResult, TurnRequest } from "../engine/types";
+import type { AssessmentRequest, Event, SessionState, StepResult, TurnRequest } from "../engine/types";
 import { indexedDbSnapshotStore } from "../persistence/indexeddb-snapshot-store";
 import { createSessionSnapshots } from "../persistence/session-snapshot";
 
@@ -26,6 +26,25 @@ async function requestModelText({ state, effects }: StepResult): Promise<string>
   if (!response.ok) throw new Error("The interviewer could not respond.");
   const { text } = (await response.json()) as { text: string };
   return text;
+}
+
+// A failed assessment counts as a complete answer so it never blocks the session.
+async function assessMissingSignal(state: SessionState, answer: string): Promise<boolean> {
+  const body: AssessmentRequest = {
+    competency: state.plan[state.questionIndex],
+    transcript: [
+      ...state.turns.map(({ speaker, body }) => ({ speaker, body })),
+      { speaker: "candidate", body: answer },
+    ],
+  };
+  try {
+    const response = await fetch("/api/assess", { method: "POST", body: JSON.stringify(body) });
+    if (!response.ok) return false;
+    const { missingSignal } = (await response.json()) as { missingSignal: boolean };
+    return missingSignal === true;
+  } catch {
+    return false;
+  }
 }
 
 // Feeds each model reply back into the engine. Progress is reported after every
@@ -149,17 +168,21 @@ export function DrillSession() {
     void advance(step(createSession({ mode: "drill", seed }), { type: "start", now: Date.now() }));
   }
 
-  function submitAnswer() {
+  async function submitAnswer() {
     const text = answer.trim();
     const latest = latestProgress.current?.state;
     if (!latest || !text) return;
     setAnswer("");
-    void advance(
-      step(latest, {
+    const endedAt = Date.now();
+    if (!isAnsweringWarmUp(latest)) setBusy(true);
+    const missingSignal = !isAnsweringWarmUp(latest) && (await assessMissingSignal(latest, text));
+    await advance(
+      step(latestProgress.current?.state ?? latest, {
         type: "candidateTurn",
         text,
-        startedAt: answerStartedAt ?? Date.now(),
-        endedAt: Date.now(),
+        startedAt: answerStartedAt ?? endedAt,
+        endedAt,
+        missingSignal,
       }),
     );
   }
@@ -202,7 +225,7 @@ export function DrillSession() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            submitAnswer();
+            void submitAnswer();
           }}
         >
           <textarea

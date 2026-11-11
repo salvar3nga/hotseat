@@ -10,7 +10,7 @@ export type GenerateReply = (request: ModelRequest) => Promise<string>;
 
 type TranscriptEntry = TurnRequest["transcript"][number];
 
-function isTranscriptEntry(value: unknown): value is TranscriptEntry {
+export function isTranscriptEntry(value: unknown): value is TranscriptEntry {
   if (typeof value !== "object" || value === null) return false;
   const entry = value as Record<string, unknown>;
   return (
@@ -50,7 +50,7 @@ const OPENING_MESSAGE = "I am ready. Please begin.";
 // A nudge is requested mid-answer, so the transcript ends on the interviewer's turn.
 const STILL_ANSWERING_MESSAGE = "[The candidate is still answering.]";
 
-function toMessages(transcript: TranscriptEntry[]): ModelRequest["messages"] {
+export function toMessages(transcript: TranscriptEntry[]): ModelRequest["messages"] {
   const messages = [
     { role: "user" as const, content: OPENING_MESSAGE },
     ...transcript.map((entry) => ({
