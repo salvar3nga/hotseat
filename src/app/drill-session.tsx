@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  answerRemainingMs,
   canRequestHint,
   createSession,
   currentQuestionTranscript,
@@ -12,12 +13,14 @@ import {
 } from "../engine/engine";
 import { phaseBanner } from "../engine/phase-banner";
 import { isGenerateTurn } from "../engine/types";
-import type { AssessmentRequest, Event, InterviewerStyle, SessionState, StepResult, TurnRequest } from "../engine/types";
+import type { AssessmentRequest, Event, InterviewerStyle, SessionState, StepResult, TurnKind, TurnRequest } from "../engine/types";
 import { indexedDbSnapshotStore } from "../persistence/indexeddb-snapshot-store";
 import { createSessionSnapshots } from "../persistence/session-snapshot";
 import { readAssessment, readTurn } from "./model-responses";
+import { formatClock } from "./answer-timing";
 import { SampleDebrief } from "./sample-debrief";
 import { StartForm } from "./start-form";
+import { TimingCard } from "./timing-card";
 
 const snapshots = createSessionSnapshots(indexedDbSnapshotStore);
 
@@ -81,11 +84,7 @@ async function runUntilIdle(
   }
 }
 
-function formatCountdown(ms: number): string {
-  const totalSeconds = Math.ceil(ms / 1000);
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
-  return `${Math.floor(totalSeconds / 60)}:${seconds}`;
-}
+const TURN_TAGS: Partial<Record<TurnKind, string>> = { hint: "Hint", nudge: "Nudge" };
 
 export function DrillSession() {
   const [progress, setProgress] = useState<StepResult | null>(null);
@@ -97,6 +96,7 @@ export function DrillSession() {
   const [now, setNow] = useState(() => Date.now());
   const [resumable, setResumable] = useState<StepResult | null | undefined>(undefined);
   const latestProgress = useRef<StepResult | null>(null);
+  const answerBox = useRef<HTMLTextAreaElement>(null);
 
   const state: SessionState | null = progress?.state ?? null;
   const banner = state ? phaseBanner(state) : null;
@@ -214,64 +214,141 @@ export function DrillSession() {
     );
   }
 
+  const answering = state?.awaiting === "answer" && !busy;
+  useEffect(() => {
+    if (answering) answerBox.current?.focus();
+  }, [answering]);
+  const answerRemaining = state ? answerRemainingMs(state, now) : null;
+  const privacy = (
+    <p className={`privacy ${state ? "privacy-footer" : "privacy-lead"}`}>
+      Your answers are sent to the Claude API to generate the interviewer&apos;s replies.
+    </p>
+  );
+
   return (
-    <section>
-      <p>Your answers are sent to the Claude API to generate the interviewer&apos;s replies.</p>
+    <div className="app">
+      <header className="app-header">
+        <h1 className="wordmark">Hotseat</h1>
+        {state && (
+          <p className="session-clock" role="timer">
+            <span className="session-clock-label">Time left</span>
+            <span>{formatClock(remainingMs(state, now))}</span>
+          </p>
+        )}
+      </header>
+
+      {!state && privacy}
 
       {!state && resumable && (
-        <div>
+        <section className="panel">
           <p>You have a drill in progress. Resume it or discard it?</p>
-          <button onClick={resumeSaved}>Resume</button>
-          <button onClick={discardSaved}>Discard</button>
-        </div>
+          <div className="button-row">
+            <button className="button" onClick={resumeSaved}>
+              Resume
+            </button>
+            <button className="button button-secondary" onClick={discardSaved}>
+              Discard
+            </button>
+          </div>
+        </section>
       )}
 
       {!state && resumable === null && <StartForm onStart={startDrill} disabled={busy} />}
 
-      {state && <p aria-label="Time left">{formatCountdown(remainingMs(state, now))}</p>}
-      {banner && <p role="status">{banner}</p>}
+      {banner && (
+        <p className="banner" role="status">
+          {banner}
+        </p>
+      )}
 
       {state && (
-        <ol>
-          {state.turns.map((turn, index) => (
-            <li key={index}>
-              <strong>{turn.speaker === "interviewer" ? "Interviewer" : "You"}:</strong> {turn.body}
-            </li>
-          ))}
-        </ol>
+        <div className="session-grid">
+          {answerRemaining !== null && <TimingCard remainingMs={answerRemaining} answering={answering} />}
+          <div className="session-main">
+            <ol className="transcript" role="log" aria-label="Interview transcript">
+              {state.turns.map((turn, index) => (
+                <li className="turn" data-speaker={turn.speaker} key={index}>
+                  <strong className="turn-speaker">{turn.speaker === "interviewer" ? "Interviewer" : "You"}</strong>
+                  <p className="turn-body">
+                    {TURN_TAGS[turn.kind] && <span className="turn-tag">{TURN_TAGS[turn.kind]}</span>}
+                    {turn.body}
+                  </p>
+                </li>
+              ))}
+            </ol>
+
+            {busy && (
+              <p className="waiting" role="status">
+                Waiting for the interviewer…
+              </p>
+            )}
+            {error && (
+              <p className="alert" role="alert">
+                <strong>Error:</strong> {error}
+              </p>
+            )}
+            {replyPending && progress && !spendCapReached && (
+              <div className="button-row">
+                <button className="button" onClick={() => void advance(progress)}>
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {state.status === "in-progress" && (
+              <form
+                className="answer-form"
+                aria-busy={!answering}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitAnswer();
+                }}
+              >
+                <label className="field-label" htmlFor="answer">
+                  Your answer
+                </label>
+                <textarea
+                  id="answer"
+                  ref={answerBox}
+                  className="answer-box"
+                  value={answer}
+                  disabled={!answering}
+                  onChange={(event) => {
+                    setAnswer(event.target.value);
+                    setAnswerStartedAt((startedAt) => startedAt ?? Date.now());
+                  }}
+                  rows={8}
+                />
+                <div className="button-row">
+                  <button className="button" type="submit" disabled={!answering}>
+                    Send answer
+                  </button>
+                  {state.hintBudget > 0 && (
+                    <button
+                      className="button button-secondary"
+                      type="button"
+                      onClick={requestHint}
+                      disabled={!canRequestHint(state)}
+                    >
+                      Hint ({hintsRemaining(state)} left)
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
       )}
 
       {spendCapReached && <SampleDebrief />}
-      {busy && <p>Waiting for the interviewer…</p>}
-      {error && <p role="alert">{error}</p>}
-      {replyPending && progress && !spendCapReached && <button onClick={() => void advance(progress)}>Retry</button>}
 
-      {state?.awaiting === "answer" && !busy && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submitAnswer();
-          }}
-        >
-          <textarea
-            value={answer}
-            onChange={(event) => {
-              setAnswer(event.target.value);
-              setAnswerStartedAt((startedAt) => startedAt ?? Date.now());
-            }}
-            rows={8}
-            aria-label="Your answer"
-          />
-          <button type="submit">Send answer</button>
-          {state.hintBudget > 0 && (
-            <button type="button" onClick={requestHint} disabled={!canRequestHint(state)}>
-              Hint ({hintsRemaining(state)} left)
-            </button>
-          )}
-        </form>
+      {state?.status === "completed" && (
+        <section className="panel">
+          <p>Drill complete.</p>
+        </section>
       )}
 
-      {state?.status === "completed" && <p>Drill complete.</p>}
-    </section>
+      {state && privacy}
+    </div>
   );
 }

@@ -106,6 +106,10 @@ function answerElapsedAt(clock: SessionClock, now: number): number {
   return clock.answerElapsedMs + runningMsAt(clock, now);
 }
 
+export function answerRemainingMs(state: SessionState, now: number): number | null {
+  return state.nudgeBudgetMs === null ? null : state.nudgeBudgetMs - answerElapsedAt(state.clock, now);
+}
+
 export function remainingMs(state: SessionState, now: number): number {
   return Math.max(0, state.clock.budgetMs - elapsedAt(state.clock, now));
 }

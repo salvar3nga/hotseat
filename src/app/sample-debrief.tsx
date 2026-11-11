@@ -1,6 +1,6 @@
 export function SampleDebrief() {
   return (
-    <section aria-label="Sample debrief">
+    <section className="panel" aria-label="Sample debrief">
       <h2>Sample debrief</h2>
       <p>The demo has reached its daily limit, so interviews are paused until tomorrow. Here is what a debrief looks like.</p>
       <ul>

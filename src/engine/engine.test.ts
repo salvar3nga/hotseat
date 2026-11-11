@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { createSession, currentQuestionTranscript, hintsRemaining, hintsUsed, remainingMs, step } from "./engine";
+import {
+  answerRemainingMs,
+  createSession,
+  currentQuestionTranscript,
+  hintsRemaining,
+  hintsUsed,
+  remainingMs,
+  step,
+} from "./engine";
 import { DEFAULT_ENGINE_CONFIG } from "./types";
-import type { Effect, EngineConfig, Event, GenerateTurnEffect, InterviewerStyle, SessionState, StyleSettings, Turn } from "./types";
+import type { Effect, EngineConfig, Event, GenerateTurnEffect, InterviewerStyle, SessionConfig, SessionState, StyleSettings, Turn } from "./types";
 
 describe("createSession", () => {
   it("starts configured", () => {
@@ -988,5 +996,30 @@ describe("hints", () => {
     const hinted = hintReply(requestHint(nudged, 182).state, 184);
 
     expect(step(hinted, { type: "tick", now: at(600) }).effects).toEqual([]);
+  });
+});
+
+describe("answerRemainingMs", () => {
+  const answeringSince = 2_000;
+  const answering = (config: SessionConfig) =>
+    playEvents(createSession(config), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Question?", now: answeringSince },
+    ]).state;
+
+  it("counts down the nudge budget while the candidate answers", () => {
+    const state = answering({ mode: "drill", seed: 7 });
+
+    expect(answerRemainingMs(state, answeringSince + 60_000)).toBe(120_000);
+  });
+
+  it("goes negative once the answer runs past the budget", () => {
+    const state = answering({ mode: "drill", seed: 7 });
+
+    expect(answerRemainingMs(state, answeringSince + 200_000)).toBe(-20_000);
+  });
+
+  it("has no budget in a coding session", () => {
+    expect(answerRemainingMs(answering({ mode: "coding", seed: 7 }), answeringSince + 60_000)).toBeNull();
   });
 });

@@ -11,15 +11,25 @@ export const BAND_LABELS: Record<VerdictBand, string> = {
 
 export function ScoringBands({ level }: { level: Level }) {
   const { noHire, hire, strongHire } = DEFAULT_VERDICT_CONFIG.bands[level];
+  const bands: { band: VerdictBand; span: number; from: string; isBar?: boolean }[] = [
+    { band: "strong-no-hire", span: noHire, from: `below ${noHire}` },
+    { band: "no-hire", span: hire - noHire, from: `from ${noHire}` },
+    { band: "hire", span: strongHire - hire, from: `from ${hire}`, isBar: true },
+    { band: "strong-hire", span: 100 - strongHire, from: `from ${strongHire}` },
+  ];
   return (
     <section aria-label="How you will be judged">
-      <p>Hiring bar for {level}: {hire} out of 100.</p>
-      <ul>
-        <li>{BAND_LABELS["strong-no-hire"]}: below {noHire}</li>
-        <li>{BAND_LABELS["no-hire"]}: {noHire} to {hire - 1}</li>
-        <li>{BAND_LABELS.hire}: {hire} to {strongHire - 1}</li>
-        <li>{BAND_LABELS["strong-hire"]}: {strongHire} and above</li>
-      </ul>
+      <p className="bands-bar">
+        Hiring bar for {level}: {hire} out of 100.
+      </p>
+      <ol className="band-scale">
+        {bands.map(({ band, span, from, isBar }) => (
+          <li key={band} data-band={band} data-bar={isBar || undefined} style={{ "--span": span } as React.CSSProperties}>
+            <span className="band-name">{BAND_LABELS[band]}</span>
+            <span className="band-from">{from}</span>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }

@@ -15,41 +15,53 @@ export function StartForm({ onStart, disabled }: StartFormProps) {
 
   return (
     <form
+      className="start-form"
       onSubmit={(event) => {
         event.preventDefault();
         onStart(style);
       }}
     >
+      <h2 className="start-title">Set up your drill</h2>
       <fieldset>
         <legend>Interviewer style</legend>
         {INTERVIEWER_STYLES.map((option) => (
-          <label key={option} style={{ display: "block" }}>
+          <label key={option} className="choice">
             <input
               type="radio"
               name="style"
               value={option}
               checked={style === option}
               onChange={() => setStyle(option)}
-            />{" "}
-            {option}: {DEFAULT_ENGINE_CONFIG.styles[option].description}
+            />
+            <span className="choice-name">{option}</span>
+            <span className="choice-note">{DEFAULT_ENGINE_CONFIG.styles[option].description}</span>
           </label>
         ))}
       </fieldset>
 
-      <label>
-        Level{" "}
-        <select value={level} onChange={(event) => setLevel(event.target.value as Level)}>
+      <div>
+        <label className="field-label" htmlFor="level">
+          Level
+        </label>
+        <select
+          id="level"
+          className="level-select"
+          value={level}
+          onChange={(event) => setLevel(event.target.value as Level)}
+        >
           {LEVELS.map((option) => (
             <option key={option}>{option}</option>
           ))}
         </select>
-      </label>
+      </div>
 
       <ScoringBands level={level} />
 
-      <button type="submit" disabled={disabled}>
-        Start a drill
-      </button>
+      <div>
+        <button className="button" type="submit" disabled={disabled}>
+          Start a drill
+        </button>
+      </div>
     </form>
   );
 }
