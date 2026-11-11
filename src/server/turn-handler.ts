@@ -33,6 +33,7 @@ const TASK_BY_KIND: Record<TurnRequest["kind"], string> = {
   "follow-up": "Ask one short follow-up that probes the missing part of the candidate's last answer. Output only the question.",
   "warm-up": "Ask one short, friendly icebreaker question unrelated to the job. Output only the question.",
   nudge: "The candidate has been answering for a while. In one short, friendly sentence, invite them to move on and wrap up their point. Do not ask a new question.",
+  hint: "The candidate is stuck and asked for a hint. In one or two short sentences, point at what a strong answer to the last question would cover, without giving the answer. Do not ask a new question.",
   "wrap-up": "Close the interview with one or two short sentences. Do not give feedback or scores.",
 };
 

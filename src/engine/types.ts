@@ -11,7 +11,7 @@ export type Competency = (typeof COMPETENCIES)[number];
 
 export type SessionStatus = "configured" | "in-progress" | "completed" | "abandoned";
 
-export type TurnKind = "question" | "answer" | "follow-up" | "wrap-up" | "warm-up" | "warm-up-skip" | "nudge";
+export type TurnKind = "question" | "answer" | "follow-up" | "wrap-up" | "warm-up" | "warm-up-skip" | "nudge" | "hint";
 
 export type Turn = {
   speaker: "interviewer" | "candidate";
@@ -24,29 +24,64 @@ export type Turn = {
 
 export type MockDuration = 30 | 45;
 
-export type SessionConfig =
+export const INTERVIEWER_STYLES = ["strict", "standard", "coaching"] as const;
+
+export type InterviewerStyle = (typeof INTERVIEWER_STYLES)[number];
+
+export type SessionConfig = (
   | { mode: "drill"; seed: number }
   | { mode: "mock"; durationMinutes: MockDuration; seed: number }
-  | { mode: "coding"; seed: number };
+  | { mode: "coding"; seed: number }
+) & { style?: InterviewerStyle };
 
 export type NudgedMode = Exclude<SessionConfig["mode"], "coding">;
+
+export type StyleSettings = {
+  description: string;
+  followUpCap: number;
+  nudgeMinutes: Record<NudgedMode, number>;
+  hintBudget: number;
+  showsBanner: boolean;
+};
 
 export type EngineConfig = {
   mockCompetencyCounts: Record<MockDuration, number>;
   warmUpMinutes: number;
-  followUpCap: number;
   drillMinutes: number;
   codingMinutes: number;
-  nudgeMinutes: Record<NudgedMode, number>;
+  styles: Record<InterviewerStyle, StyleSettings>;
 };
+
+export const DEFAULT_STYLE: InterviewerStyle = "standard";
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   mockCompetencyCounts: { 30: 4, 45: 6 },
   warmUpMinutes: 3,
-  followUpCap: 2,
   drillMinutes: 10,
   codingMinutes: 25,
-  nudgeMinutes: { mock: 2.5, drill: 3 },
+  styles: {
+    strict: {
+      description: "No hints and no coaching. Close to a real loop.",
+      followUpCap: 2,
+      nudgeMinutes: { mock: 2.5, drill: 3 },
+      hintBudget: 0,
+      showsBanner: false,
+    },
+    standard: {
+      description: "A balanced interviewer with a couple of hints available.",
+      followUpCap: 2,
+      nudgeMinutes: { mock: 2.5, drill: 3 },
+      hintBudget: 2,
+      showsBanner: true,
+    },
+    coaching: {
+      description: "More hints, earlier nudges, and a banner on what a good answer covers.",
+      followUpCap: 2,
+      nudgeMinutes: { mock: 1.5, drill: 2 },
+      hintBudget: 4,
+      showsBanner: true,
+    },
+  },
 };
 
 export type ClockScope = "session" | "question";
@@ -65,12 +100,15 @@ export type Overrun = { questionIndex: number; overrunMs: number };
 
 export type SessionState = {
   mode: SessionConfig["mode"];
+  style: InterviewerStyle;
   status: SessionStatus;
   seed: number;
   plan: Competency[];
   warmUpMinutes: number | null;
   followUpCap: number;
   nudgeBudgetMs: number | null;
+  hintBudget: number;
+  showsBanner: boolean;
   questionIndex: number;
   followUpsAsked: number;
   turns: Turn[];
@@ -88,11 +126,12 @@ export type Event =
   | { type: "tick"; now: number }
   | { type: "stop"; now: number }
   | { type: "nudgeReply"; text: string; now: number }
+  | { type: "requestHint"; now: number }
   | { type: "tabHidden"; now: number }
   | { type: "tabVisible"; now: number }
   | { type: "candidateTurn"; text: string; startedAt: number; endedAt: number; missingSignal?: boolean };
 
-export const GENERATED_KINDS = ["question", "follow-up", "wrap-up", "warm-up", "nudge"] as const satisfies readonly TurnKind[];
+export const GENERATED_KINDS = ["question", "follow-up", "wrap-up", "warm-up", "nudge", "hint"] as const satisfies readonly TurnKind[];
 
 export type TranscriptEntry = Pick<Turn, "speaker" | "body">;
 

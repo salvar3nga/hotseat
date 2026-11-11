@@ -1,6 +1,8 @@
 import type { Competency } from "./types";
 
-export type Level = "junior" | "mid" | "senior" | "staff";
+export const LEVELS = ["junior", "mid", "senior", "staff"] as const;
+
+export type Level = (typeof LEVELS)[number];
 
 export type Score = { competency: Competency; value: number; evidence: string[] };
 

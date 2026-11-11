@@ -34,13 +34,21 @@
 
 **Effect**: An output the engine asks its caller to perform, such as calling the model or saving a snapshot.
 
-**Turn kind**: One of `question`, `answer`, `follow-up`, `nudge`, `warm-up`, `warm-up-skip`, `wrap-up`. `warm-up-skip` is the candidate turn that records a skipped warm-up.
+**Turn kind**: One of `question`, `answer`, `follow-up`, `nudge`, `hint`, `warm-up`, `warm-up-skip`, `wrap-up`. `warm-up-skip` is the candidate turn that records a skipped warm-up.
 
 **Competency plan**: The ordered list of competencies a session covers, picked once when the session is configured, weighted by level and mode, with a stored seed. Skipped or cut-short questions are recorded, not replaced. A drill has a plan of one.
 
 **Warm-up**: Short opening question in a `mock` session. Skippable; a skip is recorded so the debrief does not count it as a miss.
 
 **Nudge**: A soft, in-character prompt to move on when a candidate answer passes its time budget (2.5 minutes in `mock`, 3 in `drill`). At most once per candidate turn, never cuts the candidate off.
+
+**Interviewer style**: Named bundle of engine settings the candidate picks when configuring a `mock` or `drill`: `strict`, `standard` (the default) or `coaching`. A style sets the follow-up cap, the nudge budget, the hint budget and whether the phase banner shows. Recorded on the session. Adding a style means adding config data, not engine branches.
+
+**Hint**: A candidate-initiated request for a pointer on what a strong answer to the current question covers. Answered by an interviewer turn of kind `hint`. Not a follow-up, which the interviewer initiates, so it never counts toward the follow-up cap.
+
+**Hint budget**: How many hints a session allows, set by the interviewer style (0 in `strict`). Remaining hints are derived from the budget and the hint turns.
+
+**Phase banner**: One line above the chat saying what the interviewer wants in the current phase (warm-up, question, follow-up, wrap-up). Derived from state, never stored. Hidden in `strict`.
 
 **Follow-up cap**: Maximum follow-ups on one question before the engine moves on (2 by default, config).
 
@@ -57,6 +65,12 @@
 **Per-question timer**: Clock scope where each question gets its own budget instead of the session sharing one. Submitting after zero is accepted and the overrun is recorded per question. Used by coding sessions, available to any session type.
 
 **Debrief**: End-of-session report: score per competency with evidence, rewritten answers for top weaknesses, and a practice plan.
+
+**Hiring bar**: The score a candidate needs for Hire at their level. It is the Hire edge of that level's verdict bands.
+
+**Verdict**: The band a debrief score lands in at the candidate's level (Strong no hire, No hire, Hire, Strong hire), with the hiring bar and the point gap to it. Computed from scores and config, never by the model. Covers answered competencies only in a partial debrief, leaves out regional competencies, and does not exist for an abandoned session.
+
+**Communication metrics**: Facts computed from turn timestamps, with no model call: longest silence, each answer's duration against the time budget, nudge count and hint count. Shown in the debrief as is.
 
 **Practice plan**: Debrief section listing the next competencies to drill. Each item can start a drill.
 

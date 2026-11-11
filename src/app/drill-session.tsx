@@ -1,13 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createSession, currentQuestionTranscript, isAnsweringWarmUp, remainingMs, step } from "../engine/engine";
+import {
+  canRequestHint,
+  createSession,
+  currentQuestionTranscript,
+  hintsRemaining,
+  isAnsweringWarmUp,
+  remainingMs,
+  step,
+} from "../engine/engine";
+import { phaseBanner } from "../engine/phase-banner";
 import { isGenerateTurn } from "../engine/types";
-import type { AssessmentRequest, Event, SessionState, StepResult, TurnRequest } from "../engine/types";
+import type { AssessmentRequest, Event, InterviewerStyle, SessionState, StepResult, TurnRequest } from "../engine/types";
 import { indexedDbSnapshotStore } from "../persistence/indexeddb-snapshot-store";
 import { createSessionSnapshots } from "../persistence/session-snapshot";
 import { readAssessment, readTurn } from "./model-responses";
 import { SampleDebrief } from "./sample-debrief";
+import { StartForm } from "./start-form";
 
 const snapshots = createSessionSnapshots(indexedDbSnapshotStore);
 
@@ -89,6 +99,7 @@ export function DrillSession() {
   const latestProgress = useRef<StepResult | null>(null);
 
   const state: SessionState | null = progress?.state ?? null;
+  const banner = state ? phaseBanner(state) : null;
   const replyPending = !busy && progress !== null && progress.effects.length > 0;
 
   const commit = useCallback((next: StepResult) => {
@@ -153,7 +164,6 @@ export function DrillSession() {
     setError(null);
     try {
       await runUntilIdle(() => latestProgress.current ?? next, commit);
-      setAnswerStartedAt(Date.now());
     } catch (failure) {
       if (failure instanceof SpendCapReached) setSpendCapReached(true);
       else setError(failure instanceof Error ? failure.message : "Something went wrong.");
@@ -166,7 +176,6 @@ export function DrillSession() {
     if (!resumable) return;
     const saved = resumable;
     setResumable(null);
-    setAnswerStartedAt(Date.now());
     void advance(saved);
   }
 
@@ -175,9 +184,14 @@ export function DrillSession() {
     ignoreFailure(snapshots.discard());
   }
 
-  function startDrill() {
+  function startDrill(style: InterviewerStyle) {
     const seed = Math.floor(Math.random() * 2 ** 32);
-    void advance(step(createSession({ mode: "drill", seed }), { type: "start", now: Date.now() }));
+    void advance(step(createSession({ mode: "drill", seed, style }), { type: "start", now: Date.now() }));
+  }
+
+  function requestHint() {
+    const latest = latestProgress.current?.state;
+    if (latest) void advance(step(latest, { type: "requestHint", now: Date.now() }));
   }
 
   async function submitAnswer() {
@@ -185,6 +199,7 @@ export function DrillSession() {
     const latest = latestProgress.current?.state;
     if (!latest || !text) return;
     setAnswer("");
+    setAnswerStartedAt(null);
     const endedAt = Date.now();
     if (!isAnsweringWarmUp(latest)) setBusy(true);
     const missingSignal = !isAnsweringWarmUp(latest) && (await assessMissingSignal(latest, text));
@@ -211,13 +226,10 @@ export function DrillSession() {
         </div>
       )}
 
-      {!state && resumable === null && (
-        <button onClick={startDrill} disabled={busy}>
-          Start a drill
-        </button>
-      )}
+      {!state && resumable === null && <StartForm onStart={startDrill} disabled={busy} />}
 
       {state && <p aria-label="Time left">{formatCountdown(remainingMs(state, now))}</p>}
+      {banner && <p role="status">{banner}</p>}
 
       {state && (
         <ol>
@@ -243,11 +255,19 @@ export function DrillSession() {
         >
           <textarea
             value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
+            onChange={(event) => {
+              setAnswer(event.target.value);
+              setAnswerStartedAt((startedAt) => startedAt ?? Date.now());
+            }}
             rows={8}
             aria-label="Your answer"
           />
           <button type="submit">Send answer</button>
+          {state.hintBudget > 0 && (
+            <button type="button" onClick={requestHint} disabled={!canRequestHint(state)}>
+              Hint ({hintsRemaining(state)} left)
+            </button>
+          )}
         </form>
       )}
 

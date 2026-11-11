@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createSession, currentQuestionTranscript, remainingMs, step } from "./engine";
+import { createSession, currentQuestionTranscript, hintsRemaining, hintsUsed, remainingMs, step } from "./engine";
 import { DEFAULT_ENGINE_CONFIG } from "./types";
-import type { Effect, Event, GenerateTurnEffect, SessionState, Turn } from "./types";
+import type { Effect, EngineConfig, Event, GenerateTurnEffect, InterviewerStyle, SessionState, StyleSettings, Turn } from "./types";
 
 describe("createSession", () => {
   it("starts configured", () => {
@@ -64,6 +64,14 @@ function playEvents(initial: SessionState, events: Event[]) {
 }
 
 const drill = () => createSession({ mode: "drill", seed: 7 });
+
+const standardStyleWith = (overrides: Partial<StyleSettings>): EngineConfig => ({
+  ...DEFAULT_ENGINE_CONFIG,
+  styles: {
+    ...DEFAULT_ENGINE_CONFIG.styles,
+    standard: { ...DEFAULT_ENGINE_CONFIG.styles.standard, ...overrides },
+  },
+});
 
 const scriptedDrill: Event[] = [
   { type: "start", now: 1_000 },
@@ -252,7 +260,7 @@ describe("follow-ups", () => {
   it("reads the cap from config", () => {
     const session = createSession(
       { mode: "mock", durationMinutes: 30, seed: 7 },
-      { ...DEFAULT_ENGINE_CONFIG, followUpCap: 1 },
+      standardStyleWith({ followUpCap: 1 }),
     );
     const played = playEvents(session, [...startedMock, ...answeredWithFollowUps(1), vagueAnswer()]);
 
@@ -413,7 +421,7 @@ describe("the nudge", () => {
   });
 
   it("takes the budget from config", () => {
-    const config = { ...DEFAULT_ENGINE_CONFIG, nudgeMinutes: { mock: 1, drill: 1 } };
+    const config = standardStyleWith({ nudgeMinutes: { mock: 1, drill: 1 } });
     const state = playEvents(createSession({ mode: "drill", seed: 7 }, config), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Q", now: answeringSince },
@@ -850,5 +858,135 @@ describe("currentQuestionTranscript", () => {
       { speaker: "candidate", body: "A2" },
       { speaker: "interviewer", body: "F2" },
     ]);
+  });
+});
+
+describe("interviewer style", () => {
+  const styled = (style?: InterviewerStyle) => createSession({ mode: "drill", seed: 7, style });
+  const answeringSince = 2_000;
+  const tickAfterSeconds = (state: SessionState, seconds: number) =>
+    step(state, { type: "tick", now: answeringSince + seconds * 1_000 });
+  const answering = (state: SessionState) =>
+    playEvents(state, [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Question?", now: answeringSince },
+    ]).state;
+
+  it("defaults to standard and keeps the style it was configured with", () => {
+    expect(styled().style).toBe("standard");
+    expect(styled("coaching").style).toBe("coaching");
+  });
+
+  it("applies to mock sessions too", () => {
+    expect(createSession({ mode: "mock", durationMinutes: 30, seed: 7, style: "strict" }).style).toBe("strict");
+  });
+
+  it("nudges earlier in coaching than in standard or strict", () => {
+    expect(tickAfterSeconds(answering(styled("coaching")), 120).effects).toHaveLength(1);
+    expect(tickAfterSeconds(answering(styled("standard")), 120).effects).toEqual([]);
+    expect(tickAfterSeconds(answering(styled("strict")), 120).effects).toEqual([]);
+  });
+
+  it("sets the hint budget and banner per style", () => {
+    expect(styled("strict")).toMatchObject({ hintBudget: 0, showsBanner: false });
+    expect(styled("standard")).toMatchObject({ hintBudget: 2, showsBanner: true });
+    expect(styled("coaching")).toMatchObject({ hintBudget: 4, showsBanner: true });
+  });
+});
+
+describe("hints", () => {
+  const answeringSince = 2_000;
+  const at = (seconds: number) => answeringSince + seconds * 1_000;
+  const answeringDrill = (style?: InterviewerStyle) =>
+    playEvents(createSession({ mode: "drill", seed: 7, style }), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Question?", now: answeringSince },
+    ]).state;
+  const requestHint = (state: SessionState, seconds = 10) => step(state, { type: "requestHint", now: at(seconds) });
+  const hintReply = (state: SessionState, seconds = 12) =>
+    step(state, { type: "modelReply", text: "Think about the result.", now: at(seconds) }).state;
+
+  it("asks for a hint turn tied to the current competency", () => {
+    const { state, effects } = requestHint(answeringDrill());
+
+    expect(effects).toEqual([{ type: "generateTurn", kind: "hint", competency: "ownership" }]);
+    expect(state.awaiting).toBe("hint");
+  });
+
+  it("records the hint as an interviewer turn and returns to waiting for the answer", () => {
+    const hinted = hintReply(requestHint(answeringDrill()).state);
+
+    expect(hinted.turns.at(-1)).toEqual({
+      speaker: "interviewer",
+      body: "Think about the result.",
+      kind: "hint",
+      startedAt: at(12),
+      endedAt: at(12),
+      competency: "ownership",
+    });
+    expect(hinted.awaiting).toBe("answer");
+  });
+
+  it("counts hints used and remaining from the transcript and the style budget", () => {
+    const fresh = answeringDrill();
+    const hinted = hintReply(requestHint(fresh).state);
+
+    expect([hintsUsed(fresh), hintsRemaining(fresh)]).toEqual([0, 2]);
+    expect([hintsUsed(hinted), hintsRemaining(hinted)]).toEqual([1, 1]);
+  });
+
+  it("ignores a hint once the budget is spent", () => {
+    const spent = hintReply(requestHint(hintReply(requestHint(answeringDrill()).state)).state);
+
+    expect(hintsRemaining(spent)).toBe(0);
+    expect(requestHint(spent)).toEqual({ state: spent, effects: [] });
+  });
+
+  it("ignores a hint in strict style", () => {
+    const strict = answeringDrill("strict");
+
+    expect(requestHint(strict)).toEqual({ state: strict, effects: [] });
+  });
+
+  it("ignores a hint when no answer is awaited", () => {
+    const waitingForQuestion = step(createSession({ mode: "drill", seed: 7 }), { type: "start", now: 1_000 }).state;
+
+    expect(requestHint(waitingForQuestion).effects).toEqual([]);
+  });
+
+  it("ignores a hint while a hint is already on its way", () => {
+    const waitingForHint = requestHint(answeringDrill()).state;
+
+    expect(requestHint(waitingForHint)).toEqual({ state: waitingForHint, effects: [] });
+  });
+
+  it("ignores a hint during the warm-up", () => {
+    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "How was your week?", now: answeringSince },
+    ]).state;
+
+    expect(requestHint(warmingUp).effects).toEqual([]);
+  });
+
+  it("does not count toward the follow-up cap", () => {
+    const hinted = hintReply(requestHint(answeringDrill()).state);
+
+    expect(hinted.followUpsAsked).toBe(0);
+  });
+
+  it("keeps the answer timer running across a hint", () => {
+    const hinted = hintReply(requestHint(answeringDrill(), 60).state, 62);
+
+    expect(step(hinted, { type: "tick", now: at(181) }).effects).toEqual([]);
+    expect(step(hinted, { type: "tick", now: at(182) }).effects).toHaveLength(1);
+  });
+
+  it("does not allow a second nudge after a hint", () => {
+    const requested = step(answeringDrill(), { type: "tick", now: at(180) }).state;
+    const nudged = step(requested, { type: "nudgeReply", text: "Wrap up.", now: at(181) }).state;
+    const hinted = hintReply(requestHint(nudged, 182).state, 184);
+
+    expect(step(hinted, { type: "tick", now: at(600) }).effects).toEqual([]);
   });
 });

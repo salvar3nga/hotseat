@@ -1,4 +1,4 @@
-import { COMPETENCIES, DEFAULT_ENGINE_CONFIG, GENERATED_KINDS, isOneOf } from "./types";
+import { COMPETENCIES, DEFAULT_ENGINE_CONFIG, DEFAULT_STYLE, GENERATED_KINDS, isOneOf } from "./types";
 import type {
   Competency,
   GenerateTurnEffect,
@@ -47,14 +47,19 @@ export function createSession(
   config: SessionConfig,
   engineConfig: EngineConfig = DEFAULT_ENGINE_CONFIG,
 ): SessionState {
+  const style = config.style ?? DEFAULT_STYLE;
+  const settings = engineConfig.styles[style];
   return {
     mode: config.mode,
+    style,
     status: "configured",
     seed: config.seed,
     plan: planFor(config, engineConfig),
     warmUpMinutes: config.mode === "mock" ? engineConfig.warmUpMinutes : null,
-    followUpCap: engineConfig.followUpCap,
-    nudgeBudgetMs: config.mode === "coding" ? null : engineConfig.nudgeMinutes[config.mode] * MS_PER_MINUTE,
+    followUpCap: settings.followUpCap,
+    nudgeBudgetMs: config.mode === "coding" ? null : settings.nudgeMinutes[config.mode] * MS_PER_MINUTE,
+    hintBudget: settings.hintBudget,
+    showsBanner: settings.showsBanner,
     questionIndex: 0,
     followUpsAsked: 0,
     turns: [],
@@ -119,7 +124,8 @@ function withOverrun(state: SessionState, now: number): SessionState {
 }
 
 function reclock(previous: SessionState, next: SessionState, now: number): SessionState {
-  const startsNewAnswer = next.awaiting === "answer" && previous.awaiting !== "answer";
+  const startsNewAnswer =
+    next.awaiting === "answer" && previous.awaiting !== "answer" && previous.awaiting !== "hint";
   const startsNewQuestion = next.clock.scope === "question" && next.questionIndex !== previous.questionIndex;
   const clock = {
     ...next.clock,
@@ -175,6 +181,23 @@ function hasScoredAnswer(state: SessionState): boolean {
   return state.turns.some(({ kind }) => kind === "answer");
 }
 
+export function hintsUsed(state: SessionState): number {
+  return state.turns.filter(({ kind }) => kind === "hint").length;
+}
+
+export function hintsRemaining(state: SessionState): number {
+  return Math.max(0, state.hintBudget - hintsUsed(state));
+}
+
+export function canRequestHint(state: SessionState): boolean {
+  return (
+    state.status === "in-progress" &&
+    state.awaiting === "answer" &&
+    !isAnsweringWarmUp(state) &&
+    hintsRemaining(state) > 0
+  );
+}
+
 function canNudge(state: SessionState): boolean {
   return (
     state.status === "in-progress" &&
@@ -215,7 +238,10 @@ function transition(state: SessionState, event: Event): StepResult {
       ];
       return state.awaiting === "wrap-up"
         ? { state: { ...state, turns, status: "completed", awaiting: null }, effects: [] }
-        : { state: { ...state, turns, awaiting: "answer", nudge: "idle" }, effects: [] };
+        : {
+            state: { ...state, turns, awaiting: "answer", nudge: state.awaiting === "hint" ? state.nudge : "idle" },
+            effects: [],
+          };
     }
     case "stop": {
       if (state.status !== "in-progress") return ignored;
@@ -241,6 +267,8 @@ function transition(state: SessionState, event: Event): StepResult {
       const nudgeTurn = turn("interviewer", "nudge", event.text, event.now, event.now, state);
       return { state: { ...state, turns: [...state.turns, nudgeTurn], nudge: "sent" }, effects: [] };
     }
+    case "requestHint":
+      return canRequestHint(state) ? moveTo(state, "hint") : ignored;
     case "skipWarmUp":
       if (!isAnsweringWarmUp(state)) return ignored;
       return afterWarmUp(
