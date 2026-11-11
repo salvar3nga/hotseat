@@ -8,6 +8,7 @@ import type {
   SessionConfig,
   SessionState,
   StepResult,
+  TranscriptEntry,
   Turn,
   TurnKind,
 } from "./types";
@@ -163,6 +164,11 @@ function moveTo(
 
 export function isAnsweringWarmUp(state: SessionState): boolean {
   return state.awaiting === "answer" && state.turns.at(-1)?.kind === "warm-up";
+}
+
+export function currentQuestionTranscript(state: SessionState): TranscriptEntry[] {
+  const questionIndex = state.turns.findLastIndex(({ kind }) => kind === "question");
+  return state.turns.slice(questionIndex).map(({ speaker, body }) => ({ speaker, body }));
 }
 
 function hasScoredAnswer(state: SessionState): boolean {

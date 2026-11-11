@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createSession, remainingMs, step } from "./engine";
+import { createSession, currentQuestionTranscript, remainingMs, step } from "./engine";
 import { DEFAULT_ENGINE_CONFIG } from "./types";
-import type { Effect, Event, GenerateTurnEffect, SessionState } from "./types";
+import type { Effect, Event, GenerateTurnEffect, SessionState, Turn } from "./types";
 
 describe("createSession", () => {
   it("starts configured", () => {
@@ -817,6 +817,38 @@ describe("a per-question timer", () => {
     expect(finished.state.overruns).toEqual([
       { questionIndex: 0, overrunMs: 1 * MINUTE },
       { questionIndex: 1, overrunMs: 5 * MINUTE },
+    ]);
+  });
+});
+
+describe("currentQuestionTranscript", () => {
+  const turn = (speaker: "interviewer" | "candidate", kind: Turn["kind"], body: string): Turn => ({
+    speaker,
+    kind,
+    body,
+    startedAt: 0,
+    endedAt: 0,
+    competency: "ownership",
+  });
+
+  it("keeps the latest question with its answers and follow-ups, and drops earlier questions", () => {
+    const state: SessionState = {
+      ...createSession({ mode: "mock", durationMinutes: 30, seed: 7 }),
+      turns: [
+        turn("interviewer", "warm-up", "How was your week?"),
+        turn("candidate", "warm-up", "Good."),
+        turn("interviewer", "question", "Q1"),
+        turn("candidate", "answer", "A1"),
+        turn("interviewer", "question", "Q2"),
+        turn("candidate", "answer", "A2"),
+        turn("interviewer", "follow-up", "F2"),
+      ],
+    };
+
+    expect(currentQuestionTranscript(state)).toEqual([
+      { speaker: "interviewer", body: "Q2" },
+      { speaker: "candidate", body: "A2" },
+      { speaker: "interviewer", body: "F2" },
     ]);
   });
 });

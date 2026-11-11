@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createSession, isAnsweringWarmUp, remainingMs, step } from "../engine/engine";
+import { createSession, currentQuestionTranscript, isAnsweringWarmUp, remainingMs, step } from "../engine/engine";
 import { isGenerateTurn } from "../engine/types";
 import type { AssessmentRequest, Event, SessionState, StepResult, TurnRequest } from "../engine/types";
 import { indexedDbSnapshotStore } from "../persistence/indexeddb-snapshot-store";
@@ -33,7 +33,7 @@ async function assessMissingSignal(state: SessionState, answer: string): Promise
   const body: AssessmentRequest = {
     competency: state.plan[state.questionIndex],
     transcript: [
-      ...state.turns.map(({ speaker, body }) => ({ speaker, body })),
+      ...currentQuestionTranscript(state),
       { speaker: "candidate", body: answer },
     ],
   };
