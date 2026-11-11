@@ -4,6 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createSession, remainingMs, step } from "../engine/engine";
 import { isGenerateTurn } from "../engine/types";
 import type { Event, SessionState, StepResult, TurnRequest } from "../engine/types";
+import { indexedDbSnapshotStore } from "../persistence/indexeddb-snapshot-store";
+import { createSessionSnapshots } from "../persistence/session-snapshot";
+
+const snapshots = createSessionSnapshots(indexedDbSnapshotStore);
+
+// Persistence is best effort: a blocked or full IndexedDB must not interrupt the interview.
+function ignoreFailure(operation: Promise<unknown>): void {
+  operation.catch(() => undefined);
+}
 
 async function requestModelText({ state, effects }: StepResult): Promise<string> {
   const effect = effects.find(isGenerateTurn);
@@ -46,14 +55,24 @@ export function DrillSession() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [resumable, setResumable] = useState<StepResult | null | undefined>(undefined);
   const latestProgress = useRef<StepResult | null>(null);
 
   const state: SessionState | null = progress?.state ?? null;
   const replyPending = !busy && progress !== null && progress.effects.length > 0;
 
   const commit = useCallback((next: StepResult) => {
+    const previous = latestProgress.current;
     latestProgress.current = next;
     setProgress(next);
+    ignoreFailure(snapshots.record(previous, next, Date.now()));
+  }, []);
+
+  useEffect(() => {
+    snapshots
+      .loadResumable(Date.now())
+      .then(setResumable)
+      .catch(() => setResumable(null));
   }, []);
 
   // Events that never owe the model a turn leave the pending effects untouched.
@@ -112,6 +131,19 @@ export function DrillSession() {
     }
   }
 
+  function resumeSaved() {
+    if (!resumable) return;
+    const saved = resumable;
+    setResumable(null);
+    setAnswerStartedAt(Date.now());
+    void advance(saved);
+  }
+
+  function discardSaved() {
+    setResumable(null);
+    ignoreFailure(snapshots.discard());
+  }
+
   function startDrill() {
     const seed = Math.floor(Math.random() * 2 ** 32);
     void advance(step(createSession({ mode: "drill", seed }), { type: "start", now: Date.now() }));
@@ -136,7 +168,15 @@ export function DrillSession() {
     <section>
       <p>Your answers are sent to the Claude API to generate the interviewer&apos;s replies.</p>
 
-      {!state && (
+      {!state && resumable && (
+        <div>
+          <p>You have a drill in progress. Resume it or discard it?</p>
+          <button onClick={resumeSaved}>Resume</button>
+          <button onClick={discardSaved}>Discard</button>
+        </div>
+      )}
+
+      {!state && resumable === null && (
         <button onClick={startDrill} disabled={busy}>
           Start a drill
         </button>
