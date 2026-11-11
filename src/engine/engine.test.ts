@@ -40,7 +40,7 @@ describe("createSession in mock mode", () => {
   });
 
   it("takes counts and warm-up length from config", () => {
-    const config = { mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5, followUpCap: 2, drillMinutes: 10, nudgeMinutes: { mock: 2.5, drill: 3 } } as const;
+    const config = { ...DEFAULT_ENGINE_CONFIG, mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5 };
     const session = createSession({ mode: "mock", durationMinutes: 45, seed: 7 }, config);
 
     expect(session.plan).toHaveLength(3);
@@ -724,5 +724,99 @@ describe("stopping a session", () => {
 
     expect(step(configured, { type: "stop", now: 1_000 })).toEqual({ state: configured, effects: [] });
     expect(step(completed, { type: "stop", now: 99_000 })).toEqual({ state: completed, effects: [] });
+  });
+});
+
+describe("a coding session", () => {
+  const MINUTE = 60_000;
+  const answeringSince = 2_000;
+  const after = (ms: number) => answeringSince + ms;
+  const coding = () => createSession({ mode: "coding", seed: 7 });
+  const answering = () =>
+    playEvents(coding(), [
+      { type: "start", now: 1_000 },
+      { type: "modelReply", text: "Reverse a linked list.", now: answeringSince },
+    ]).state;
+  const submit = (state: SessionState, ms: number) =>
+    step(state, { type: "candidateTurn", text: "def solve(): ...", startedAt: answeringSince, endedAt: after(ms) });
+
+  it("runs on its own 25 minute timer", () => {
+    expect(remainingMs(coding(), 0)).toBe(25 * MINUTE);
+    expect(remainingMs(answering(), after(10 * MINUTE))).toBe(15 * MINUTE);
+  });
+
+  it("takes the length from config", () => {
+    const session = createSession({ mode: "coding", seed: 7 }, { ...DEFAULT_ENGINE_CONFIG, codingMinutes: 40 });
+
+    expect(remainingMs(session, 0)).toBe(40 * MINUTE);
+  });
+
+  it("asks one question and then wraps up", () => {
+    const result = submit(answering(), 10 * MINUTE);
+
+    expect(result.state.awaiting).toBe("wrap-up");
+    expect(result.state.overruns).toEqual([]);
+  });
+
+  it("accepts a submission after zero and records the overrun", () => {
+    const result = submit(answering(), 25 * MINUTE + 90_000);
+
+    expect(result.state.turns.at(-1)?.kind).toBe("answer");
+    expect(result.state.overruns).toEqual([{ questionIndex: 0, overrunMs: 90_000 }]);
+    expect(remainingMs(result.state, after(30 * MINUTE))).toBe(0);
+  });
+
+  it("keeps one overrun per question when a follow-up answer also runs late", () => {
+    const followUp = step(answering(), {
+      type: "candidateTurn",
+      text: "Partial.",
+      startedAt: answeringSince,
+      endedAt: after(26 * MINUTE),
+      missingSignal: true,
+    }).state;
+    const second = playEvents(followUp, [{ type: "modelReply", text: "Why?", now: after(26 * MINUTE) }]).state;
+    const result = step(second, {
+      type: "candidateTurn",
+      text: "More.",
+      startedAt: after(26 * MINUTE),
+      endedAt: after(28 * MINUTE),
+    });
+
+    expect(result.state.overruns).toEqual([{ questionIndex: 0, overrunMs: 3 * MINUTE }]);
+  });
+
+  it("does not record an overrun for a submission exactly at zero", () => {
+    expect(submit(answering(), 25 * MINUTE).state.overruns).toEqual([]);
+  });
+
+  it("never nudges", () => {
+    const result = step(answering(), { type: "tick", now: after(20 * MINUTE) });
+
+    expect(result.effects).toEqual([]);
+  });
+});
+
+describe("a per-question timer", () => {
+  const MINUTE = 60_000;
+  const perQuestion = () => {
+    const state = createSession({ mode: "coding", seed: 7 });
+    return { ...state, plan: ["ownership", "conflict"] as SessionState["plan"] };
+  };
+
+  it("restarts for each question and records overruns per question", () => {
+    const { state } = playEvents(perQuestion(), [
+      { type: "start", now: 0 },
+      { type: "modelReply", text: "Q1", now: 0 },
+      { type: "candidateTurn", text: "A1", startedAt: 0, endedAt: 26 * MINUTE },
+      { type: "modelReply", text: "Q2", now: 26 * MINUTE },
+    ]);
+
+    expect(remainingMs(state, 26 * MINUTE)).toBe(25 * MINUTE);
+
+    const finished = step(state, { type: "candidateTurn", text: "A2", startedAt: 26 * MINUTE, endedAt: 56 * MINUTE });
+    expect(finished.state.overruns).toEqual([
+      { questionIndex: 0, overrunMs: 1 * MINUTE },
+      { questionIndex: 1, overrunMs: 5 * MINUTE },
+    ]);
   });
 });

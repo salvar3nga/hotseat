@@ -32,6 +32,7 @@ function seededShuffle<T>(items: readonly T[], seed: number): T[] {
 }
 
 function planFor(config: SessionConfig, { mockCompetencyCounts }: EngineConfig): Competency[] {
+  if (config.mode === "coding") return [];
   if (config.mode === "drill") {
     return [COMPETENCIES[Math.floor(seededUnitInterval(config.seed) * COMPETENCIES.length)]];
   }
@@ -52,19 +53,33 @@ export function createSession(
     plan: planFor(config, engineConfig),
     warmUpMinutes: config.mode === "mock" ? engineConfig.warmUpMinutes : null,
     followUpCap: engineConfig.followUpCap,
-    nudgeBudgetMs: engineConfig.nudgeMinutes[config.mode] * MS_PER_MINUTE,
+    nudgeBudgetMs: config.mode === "coding" ? null : engineConfig.nudgeMinutes[config.mode] * MS_PER_MINUTE,
     questionIndex: 0,
     followUpsAsked: 0,
     turns: [],
     awaiting: null,
-    clock: { budgetMs: budgetMinutes(config, engineConfig) * MS_PER_MINUTE, elapsedMs: 0, answerElapsedMs: 0, runningSince: null },
+    clock: {
+      scope: config.mode === "coding" ? "question" : "session",
+      budgetMs: budgetMinutes(config, engineConfig) * MS_PER_MINUTE,
+      elapsedMs: 0,
+      answerElapsedMs: 0,
+      runningSince: null,
+    },
     tabHidden: false,
     nudge: "idle",
+    overruns: [],
   };
 }
 
-function budgetMinutes(config: SessionConfig, { drillMinutes }: EngineConfig): number {
-  return config.mode === "mock" ? config.durationMinutes : drillMinutes;
+function budgetMinutes(config: SessionConfig, engineConfig: EngineConfig): number {
+  switch (config.mode) {
+    case "mock":
+      return config.durationMinutes;
+    case "drill":
+      return engineConfig.drillMinutes;
+    case "coding":
+      return engineConfig.codingMinutes;
+  }
 }
 
 // The clock only runs while the candidate can answer in a visible tab, so model waits
@@ -90,15 +105,24 @@ export function remainingMs(state: SessionState, now: number): number {
 }
 
 // Zero is only ever reached mid-answer, so it is checked when that answer ends.
+// A per-question clock never ends the session: the answer is accepted and the overrun recorded.
 function isExpiredAt(state: SessionState, now: number): boolean {
-  return remainingMs(state, now) === 0;
+  return state.clock.scope === "session" && remainingMs(state, now) === 0;
+}
+
+function withOverrun(state: SessionState, now: number): SessionState {
+  const overrunMs = elapsedAt(state.clock, now) - state.clock.budgetMs;
+  if (state.clock.scope === "session" || overrunMs <= 0) return state;
+  const otherQuestions = state.overruns.filter(({ questionIndex }) => questionIndex !== state.questionIndex);
+  return { ...state, overruns: [...otherQuestions, { questionIndex: state.questionIndex, overrunMs }] };
 }
 
 function reclock(previous: SessionState, next: SessionState, now: number): SessionState {
   const startsNewAnswer = next.awaiting === "answer" && previous.awaiting !== "answer";
+  const startsNewQuestion = next.clock.scope === "question" && next.questionIndex !== previous.questionIndex;
   const clock = {
     ...next.clock,
-    elapsedMs: elapsedAt(previous.clock, now),
+    elapsedMs: startsNewQuestion ? 0 : elapsedAt(previous.clock, now),
     answerElapsedMs: startsNewAnswer ? 0 : answerElapsedAt(previous.clock, now),
     runningSince: isClockRunning(next) ? now : null,
   };
@@ -110,7 +134,7 @@ function eventTime(event: Event): number {
 }
 
 function competencyFor(kind: TurnKind, state: SessionState): Competency | null {
-  return kind === "warm-up" || kind === "warm-up-skip" ? null : state.plan[state.questionIndex];
+  return kind === "warm-up" || kind === "warm-up-skip" ? null : (state.plan[state.questionIndex] ?? null);
 }
 
 function turn(
@@ -198,7 +222,8 @@ function transition(state: SessionState, event: Event): StepResult {
         : { state: { ...stopped, status: "abandoned" }, effects: [] };
     }
     case "tick": {
-      const overBudget = answerElapsedAt(state.clock, event.now) >= state.nudgeBudgetMs;
+      const overBudget =
+        state.nudgeBudgetMs !== null && answerElapsedAt(state.clock, event.now) >= state.nudgeBudgetMs;
       if (!canNudge(state) || !overBudget) return ignored;
       return {
         state: { ...state, nudge: "requested" },
@@ -226,7 +251,7 @@ function transition(state: SessionState, event: Event): StepResult {
       const kind = isAnsweringWarmUp(state) ? "warm-up" : "answer";
       const answer = turn("candidate", kind, event.text, event.startedAt, event.endedAt, state);
       if (kind === "warm-up") return afterWarmUp(state, answer, event.endedAt);
-      const answered = { ...state, turns: [...state.turns, answer] };
+      const answered = withOverrun({ ...state, turns: [...state.turns, answer] }, event.endedAt);
       if (isExpiredAt(state, event.endedAt)) return moveTo(answered, "wrap-up");
       if (event.missingSignal && state.followUpsAsked < state.followUpCap) {
         return moveTo(answered, "follow-up", { followUpsAsked: state.followUpsAsked + 1 });

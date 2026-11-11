@@ -52,6 +52,8 @@
 
 **Coding session**: Session type for a coding question, with its own 25-minute clock, separate from the `mock` and `drill` clocks. Overrun is allowed and recorded.
 
+**Per-question timer**: Clock scope where each question gets its own budget instead of the session sharing one. Submitting after zero is accepted and the overrun is recorded per question. Used by coding sessions, available to any session type.
+
 **Debrief**: End-of-session report: score per competency with evidence, rewritten answers for top weaknesses, and a practice plan.
 
 **Practice plan**: Debrief section listing the next competencies to drill. Each item can start a drill.

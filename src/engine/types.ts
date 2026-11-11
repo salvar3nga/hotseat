@@ -26,14 +26,18 @@ export type MockDuration = 30 | 45;
 
 export type SessionConfig =
   | { mode: "drill"; seed: number }
-  | { mode: "mock"; durationMinutes: MockDuration; seed: number };
+  | { mode: "mock"; durationMinutes: MockDuration; seed: number }
+  | { mode: "coding"; seed: number };
+
+export type NudgedMode = Exclude<SessionConfig["mode"], "coding">;
 
 export type EngineConfig = {
   mockCompetencyCounts: Record<MockDuration, number>;
   warmUpMinutes: number;
   followUpCap: number;
   drillMinutes: number;
-  nudgeMinutes: Record<SessionConfig["mode"], number>;
+  codingMinutes: number;
+  nudgeMinutes: Record<NudgedMode, number>;
 };
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
@@ -41,10 +45,14 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   warmUpMinutes: 3,
   followUpCap: 2,
   drillMinutes: 10,
+  codingMinutes: 25,
   nudgeMinutes: { mock: 2.5, drill: 3 },
 };
 
+export type ClockScope = "session" | "question";
+
 export type SessionClock = {
+  scope: ClockScope;
   budgetMs: number;
   elapsedMs: number;
   answerElapsedMs: number;
@@ -53,6 +61,8 @@ export type SessionClock = {
 
 export type NudgeStatus = "idle" | "requested" | "sent";
 
+export type Overrun = { questionIndex: number; overrunMs: number };
+
 export type SessionState = {
   mode: SessionConfig["mode"];
   status: SessionStatus;
@@ -60,7 +70,7 @@ export type SessionState = {
   plan: Competency[];
   warmUpMinutes: number | null;
   followUpCap: number;
-  nudgeBudgetMs: number;
+  nudgeBudgetMs: number | null;
   questionIndex: number;
   followUpsAsked: number;
   turns: Turn[];
@@ -68,6 +78,7 @@ export type SessionState = {
   clock: SessionClock;
   tabHidden: boolean;
   nudge: NudgeStatus;
+  overruns: Overrun[];
 };
 
 export type Event =
