@@ -158,7 +158,7 @@ A cool, near-monochrome ink-and-paper palette with one signal trio held in reser
 ### Neutral
 - **Cardstock** (`ground`, oklch(96.5% 0.008 250)): page background.
 - **Sheet White** (`sheet`, oklch(99.4% 0.003 250)): panels, answer box, choice rows, candidate turns, secondary buttons, resting timing card.
-- **Soft Ink** (`ink-soft`, oklch(42% 0.03 258)): speaker names, notes, placeholders, waiting text, disabled text.
+- **Soft Ink** (`ink-soft`, oklch(42% 0.03 258)): speaker names, notes, placeholders, the typing dots, disabled text.
 - **Hairline** (`rule`, oklch(84% 0.012 255)): transcript dividers, choice-row and candidate-turn borders, disabled borders.
 - **Tint** (`tint`, oklch(92.5% 0.014 255)): banner, alert, disabled fills, hover on secondary buttons.
 

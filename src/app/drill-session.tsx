@@ -278,9 +278,15 @@ export function DrillSession() {
             </ol>
 
             {busy && (
-              <p className="waiting" role="status">
-                Waiting for the interviewer…
-              </p>
+              <div className="turn typing" data-speaker="interviewer" role="status">
+                <strong className="turn-speaker">Interviewer</strong>
+                <p className="typing-dots">
+                  <span className="visually-hidden">Waiting for the interviewer…</span>
+                  <span aria-hidden="true" />
+                  <span aria-hidden="true" />
+                  <span aria-hidden="true" />
+                </p>
+              </div>
             )}
             {error && (
               <p className="alert" role="alert">
