@@ -54,6 +54,9 @@ export type EngineConfig = {
 
 export const DEFAULT_STYLE: InterviewerStyle = "standard";
 
+const DEFAULT_FOLLOW_UP_CAP = 2;
+const DEFAULT_NUDGE_MINUTES: StyleSettings["nudgeMinutes"] = { mock: 2.5, drill: 3 };
+
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   mockCompetencyCounts: { 30: 4, 45: 6 },
   warmUpMinutes: 3,
@@ -62,21 +65,21 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   styles: {
     strict: {
       description: "No hints and no coaching. Close to a real loop.",
-      followUpCap: 2,
-      nudgeMinutes: { mock: 2.5, drill: 3 },
+      followUpCap: DEFAULT_FOLLOW_UP_CAP,
+      nudgeMinutes: DEFAULT_NUDGE_MINUTES,
       hintBudget: 0,
       showsBanner: false,
     },
     standard: {
       description: "A balanced interviewer with a couple of hints available.",
-      followUpCap: 2,
-      nudgeMinutes: { mock: 2.5, drill: 3 },
+      followUpCap: DEFAULT_FOLLOW_UP_CAP,
+      nudgeMinutes: DEFAULT_NUDGE_MINUTES,
       hintBudget: 2,
       showsBanner: true,
     },
     coaching: {
       description: "More hints, earlier nudges, and a banner on what a good answer covers.",
-      followUpCap: 2,
+      followUpCap: DEFAULT_FOLLOW_UP_CAP,
       nudgeMinutes: { mock: 1.5, drill: 2 },
       hintBudget: 4,
       showsBanner: true,
