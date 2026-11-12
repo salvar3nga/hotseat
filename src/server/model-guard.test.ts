@@ -102,6 +102,7 @@ describe("model guard", () => {
         inner,
         expensive: guard(inner, { cost: 3 }),
         cheap: guard(inner, { cost: 1 }),
+        finishing: guard(inner, { cost: 3, exemptFromSpendCap: true }),
         advance: (ms: number) => {
           now += ms;
         },
@@ -127,6 +128,31 @@ describe("model guard", () => {
       await expensive(requestFrom("1.1.1.1"));
 
       expect((await cheap(requestFrom("2.2.2.2"))).status).toBe(200);
+    });
+
+    it("lets an exempt route run after the cap is reached", async () => {
+      const { cheap, finishing, inner } = setupShared(1);
+      await cheap(requestFrom("1.1.1.1"));
+
+      const response = await finishing(requestFrom("2.2.2.2"));
+
+      expect(response.status).toBe(200);
+      expect(inner).toHaveBeenCalledTimes(2);
+    });
+
+    it("still counts an exempt route's cost toward the budget", async () => {
+      const { cheap, finishing } = setupShared(3);
+      await finishing(requestFrom("1.1.1.1"));
+
+      expect((await cheap(requestFrom("2.2.2.2"))).status).toBe(503);
+    });
+
+    it("still rate limits an exempt route", async () => {
+      const { finishing } = setupShared(1);
+      await finishing(requestFrom("1.1.1.1"));
+      await finishing(requestFrom("1.1.1.1"));
+
+      expect((await finishing(requestFrom("1.1.1.1"))).status).toBe(429);
     });
 
     it("starts a fresh budget on the next UTC day", async () => {

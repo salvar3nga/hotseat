@@ -32,13 +32,17 @@ export function createModelGuard(config: GuardConfig, now: () => number) {
   const callsByIp = new Map<string, number[]>();
   let spend = { day: -1, total: 0 };
 
-  return function guard(handler: Handler, { cost }: { cost: number }): Handler {
+  // A route that finishes work already begun is exempt from the daily cap, but still counts toward it.
+  return function guard(
+    handler: Handler,
+    { cost, exemptFromSpendCap = false }: { cost: number; exemptFromSpendCap?: boolean },
+  ): Handler {
     return async function guarded(request) {
       const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
       const current = now();
       const day = Math.floor(current / DAY_MS);
       if (spend.day !== day) spend = { day, total: 0 };
-      if (spend.total >= config.dailyBudget) return spendCapReached();
+      if (spend.total >= config.dailyBudget && !exemptFromSpendCap) return spendCapReached();
 
       const calls = (callsByIp.get(ip) ?? []).filter((at) => current - at < HOUR_MS);
 

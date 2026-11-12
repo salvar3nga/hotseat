@@ -12,6 +12,4 @@ export type Ports = {
     targetLevel?: Level;
     jobDescription?: string;
   }) => Level;
-  scoreCompetency: (competency: Competency, level: Level, transcript: string) => Score;
-  nextFollowUp: (competency: Competency, level: Level, transcript: string) => string | null;
 };

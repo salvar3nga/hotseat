@@ -25,6 +25,16 @@ export type Debrief = {
   partial: boolean;
 };
 
+export type ScoringRequest = {
+  transcript: TranscriptEntry[];
+  level: Level;
+  competencies: Competency[];
+  metrics: CommunicationMetrics;
+};
+
+// Weaknesses are still proposals here. assembleDebrief checks them against the verified scores.
+export type ScoringResponse = VerifiedScores & { weaknesses: ProposedWeakness[] };
+
 type SessionFacts = Pick<SessionState, "mode" | "level" | "style">;
 
 const byScoreAscending = (scores: Score[]) => (a: Competency, b: Competency) => {
