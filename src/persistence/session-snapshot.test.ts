@@ -100,6 +100,42 @@ describe("session snapshots", () => {
     expect(store.slot).toBeNull();
   });
 
+  describe("a finished session", () => {
+    const withScoredAnswer = () => {
+      const answered = step(answering().state, { type: "candidateTurn", text: "I led it.", startedAt: 1, endedAt: 2 });
+      return step(answered.state, { type: "stop", now: 3_000 });
+    };
+
+    it("is kept while its debrief is still owed, so a failed scoring call can be retried", async () => {
+      const store = inMemoryStore();
+      const snapshots = createSessionSnapshots(store);
+      const finished = withScoredAnswer();
+
+      await snapshots.save(finished, 3_000);
+
+      const resumed = await snapshots.loadResumable(4_000);
+      expect(resumed?.state.status).toBe("completed");
+      expect(resumed?.effects).toEqual(finished.effects);
+    });
+
+    it("is removed once its debrief is no longer owed", async () => {
+      const store = inMemoryStore();
+      const snapshots = createSessionSnapshots(store);
+      await snapshots.save(withScoredAnswer(), 3_000);
+
+      await snapshots.save({ ...withScoredAnswer(), effects: [] }, 4_000);
+
+      expect(store.slot).toBeNull();
+    });
+
+    it("still expires after 24 hours", async () => {
+      const snapshots = createSessionSnapshots(inMemoryStore());
+      await snapshots.save(withScoredAnswer(), 0);
+
+      expect(await snapshots.loadResumable(SNAPSHOT_TTL_MS + 1)).toBeNull();
+    });
+  });
+
   it("removes the snapshot on discard, which delete all history also uses", async () => {
     const store = inMemoryStore();
     const snapshots = createSessionSnapshots(store);

@@ -60,7 +60,7 @@
 
 **Wrap-up**: The interviewer's closing turn. When the clock hits zero no new question is asked, the current answer finishes, then the wrap-up.
 
-**Snapshot**: The in-progress session saved to IndexedDB after every turn, one slot per browser, expiring after 24 hours. Kept after the session ends until a debrief is saved, so a failed scoring call can be retried, and deleted then and by "delete all history". Time waiting on the model and time away from the tab do not count against the clock.
+**Snapshot**: The in-progress session saved to IndexedDB after every turn, one slot per browser, expiring after 24 hours. Kept after a session with a scored answer ends, until its debrief is saved, so a failed scoring call can be retried and a reload still offers the debrief. Deleted then, when the session is abandoned, and by "delete all history". Until history storage exists, a debrief counts as saved once it is shown. Time waiting on the model and time away from the tab do not count against the clock.
 
 **Abandoned**: Session status for a session with nothing scorable. No debrief. Stopping after at least one scored answer is `completed` with a partial debrief.
 
@@ -68,7 +68,7 @@
 
 **Per-question timer**: Clock scope where each question gets its own budget instead of the session sharing one. Submitting after zero is accepted and the overrun is recorded per question. Used by coding sessions, available to any session type.
 
-**Debrief**: End-of-session report: score per competency with evidence, rewritten answers for top weaknesses, and a practice plan. Scores and weaknesses come from one model call. The verdict, communication metrics and practice plan are computed by code.
+**Debrief**: End-of-session report: score per competency with evidence, rewritten answers for top weaknesses, and a practice plan. Scores and weaknesses come from one model call. The verdict, communication metrics and practice plan are computed by code. Built when a session completes, whether it ran out, was wrapped up or was stopped. A partial debrief says which competencies it covers. A competency that was answered but could not be verified shows as not scored. An abandoned session has none.
 
 **Weakness**: One of the top two or three competencies to improve, chosen by the model, with a rewritten stronger version of one of the candidate's actual answers. Dropped when its competency was not scored or its answer matches no verified quote.
 
@@ -78,7 +78,7 @@
 
 **Communication metrics**: Facts computed from turn timestamps, with no model call: longest silence, each answer's duration against the time budget, nudge count and hint count. Shown in the debrief as is.
 
-**Practice plan**: Debrief section listing the next competencies to drill. Each item can start a drill.
+**Practice plan**: Debrief section listing the next competencies to drill. Each item starts a drill on that competency at the session's level and style.
 
 **Drill**: A session in `drill` mode.
 

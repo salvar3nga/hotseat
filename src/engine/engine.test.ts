@@ -24,6 +24,10 @@ describe("createSession", () => {
     expect(createSession({ mode: "drill", seed: 7, level: "mid" }).plan).toEqual(["ownership"]);
   });
 
+  it("plans the competency a drill was asked for", () => {
+    expect(createSession({ mode: "drill", seed: 7, level: "mid", competency: "conflict" }).plan).toEqual(["conflict"]);
+  });
+
   it("plans a different competency for a different seed", () => {
     expect(createSession({ mode: "drill", seed: 4, level: "mid" }).plan).toEqual(["communication"]);
   });
@@ -130,10 +134,11 @@ describe("a scripted drill", () => {
     });
   });
 
-  it("asks for a question, then a wrap-up", () => {
-    expect(playEvents(drill(), scriptedDrill).effects).toEqual([
-      { type: "generateTurn", kind: "question", competency: "ownership" },
-      { type: "generateTurn", kind: "wrap-up", competency: "ownership" },
+  it("asks for a question, then a wrap-up, then builds the debrief", () => {
+    expect(playEvents(drill(), scriptedDrill).effects.map(({ type }) => type)).toEqual([
+      "generateTurn",
+      "generateTurn",
+      "buildDebrief",
     ]);
   });
 });
@@ -610,6 +615,28 @@ describe("when the clock reaches zero", () => {
 
     expect(completed.status).toBe("completed");
     expect(completed.turns.at(-1)).toMatchObject({ kind: "wrap-up", speaker: "interviewer" });
+  });
+
+  it("hands the transcript to the debrief when the wrap-up completes the session", () => {
+    const wrappingUp = step(drillAnswering(), {
+      type: "candidateTurn",
+      text: "My long answer.",
+      startedAt: answeringSince,
+      endedAt: after(12 * MINUTE),
+    }).state;
+
+    const completed = step(wrappingUp, { type: "modelReply", text: "Time is up. Thank you.", now: after(12 * MINUTE + 1_000) });
+
+    expect(completed.effects).toEqual([
+      {
+        type: "buildDebrief",
+        transcript: [
+          { speaker: "interviewer", body: "Tell me about a time you owned a project." },
+          { speaker: "candidate", body: "My long answer." },
+          { speaker: "interviewer", body: "Time is up. Thank you." },
+        ],
+      },
+    ]);
   });
 
   it("wraps up instead of asking the first question after a warm-up that ran out the clock", () => {

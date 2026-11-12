@@ -11,14 +11,17 @@ import {
   remainingMs,
   step,
 } from "../engine/engine";
+import { isPartial, scoringRequestFor } from "../engine/debrief";
+import type { Debrief, PracticeItem } from "../engine/debrief";
 import { phaseBanner } from "../engine/phase-banner";
 import type { Level } from "../engine/ports";
 import { isGenerateTurn } from "../engine/types";
-import type { AssessmentRequest, Event, InterviewerStyle, SessionState, StepResult, TurnKind, TurnRequest } from "../engine/types";
+import type { AssessmentRequest, Competency, Event, InterviewerStyle, SessionState, StepResult, TurnKind, TurnRequest } from "../engine/types";
 import { indexedDbSnapshotStore } from "../persistence/indexeddb-snapshot-store";
 import { createSessionSnapshots } from "../persistence/session-snapshot";
-import { readAssessment, readTurn } from "./model-responses";
+import { readAssessment, readDebrief, readTurn } from "./model-responses";
 import { formatClock } from "./answer-timing";
+import { DebriefView } from "./debrief-view";
 import { SampleDebrief } from "./sample-debrief";
 import { StartForm } from "./start-form";
 import { TimingCard } from "./timing-card";
@@ -54,6 +57,17 @@ async function requestModelText({ state, effects }: StepResult): Promise<string>
   }
 }
 
+async function requestDebrief(state: SessionState) {
+  const request = scoringRequestFor(state);
+  const response = await fetch("/api/debrief", { method: "POST", body: JSON.stringify(request) });
+  return readDebrief(response, {
+    transcript: request.transcript,
+    session: state,
+    metrics: request.metrics,
+    partial: isPartial(state),
+  });
+}
+
 // A failed assessment counts as a complete answer so it never blocks the session.
 async function assessMissingSignal(state: SessionState, answer: string): Promise<boolean> {
   const body: AssessmentRequest = {
@@ -79,7 +93,7 @@ async function runUntilIdle(
   readProgress: () => StepResult,
   onProgress: (progress: StepResult) => void,
 ): Promise<void> {
-  while (readProgress().effects.length > 0) {
+  while (readProgress().effects.some(isGenerateTurn)) {
     const text = await requestModelText(readProgress());
     onProgress(step(readProgress().state, { type: "modelReply", text, now: Date.now() }));
   }
@@ -93,6 +107,9 @@ export function DrillSession() {
   const [answerStartedAt, setAnswerStartedAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debrief, setDebrief] = useState<Debrief | null>(null);
+  const [debriefError, setDebriefError] = useState<string | null>(null);
+  const [scoring, setScoring] = useState(false);
   const [spendCapReached, setSpendCapReached] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [resumable, setResumable] = useState<StepResult | null | undefined>(undefined);
@@ -101,7 +118,8 @@ export function DrillSession() {
 
   const state: SessionState | null = progress?.state ?? null;
   const banner = state ? phaseBanner(state) : null;
-  const replyPending = !busy && progress !== null && progress.effects.length > 0;
+  const replyPending = !busy && progress !== null && progress.effects.some(isGenerateTurn);
+  const debriefOwed = !busy && !scoring && progress !== null && progress.effects.some(({ type }) => type === "buildDebrief");
 
   const commit = useCallback((next: StepResult) => {
     const previous = latestProgress.current;
@@ -159,6 +177,26 @@ export function DrillSession() {
     return () => clearInterval(interval);
   }, [observe, deliverNudge]);
 
+  // The snapshot stays until the debrief is in hand, so a failed call never loses the transcript.
+  async function scoreFinishedSession(finished: StepResult) {
+    setScoring(true);
+    setDebriefError(null);
+    try {
+      const outcome = await requestDebrief(finished.state);
+      if (outcome.kind === "failed") {
+        setDebriefError(outcome.message);
+        return;
+      }
+      setDebrief(outcome.debrief);
+      commit({ state: finished.state, effects: [] });
+      ignoreFailure(snapshots.discard());
+    } catch {
+      setDebriefError("The debrief could not be built.");
+    } finally {
+      setScoring(false);
+    }
+  }
+
   async function advance(next: StepResult) {
     commit(next);
     setBusy(true);
@@ -171,6 +209,8 @@ export function DrillSession() {
     } finally {
       setBusy(false);
     }
+    const latest = latestProgress.current;
+    if (latest?.effects.some(({ type }) => type === "buildDebrief")) await scoreFinishedSession(latest);
   }
 
   function resumeSaved() {
@@ -185,9 +225,17 @@ export function DrillSession() {
     ignoreFailure(snapshots.discard());
   }
 
-  function startDrill(style: InterviewerStyle, level: Level) {
+  function startDrill(style: InterviewerStyle, level: Level, competency?: Competency) {
     const seed = Math.floor(Math.random() * 2 ** 32);
-    void advance(step(createSession({ mode: "drill", seed, style, level }), { type: "start", now: Date.now() }));
+    setDebrief(null);
+    setDebriefError(null);
+    void advance(
+      step(createSession({ mode: "drill", seed, style, level, competency }), { type: "start", now: Date.now() }),
+    );
+  }
+
+  function practice({ competency, level, style }: PracticeItem) {
+    startDrill(style, level, competency);
   }
 
   function requestHint() {
@@ -235,10 +283,14 @@ export function DrillSession() {
 
       {!state && resumable && (
         <section className="panel">
-          <p>You have a drill in progress. Resume it or discard it?</p>
+          <p>
+            {resumable.state.status === "completed"
+              ? "Your last drill finished but was not scored. Build its debrief or discard it?"
+              : "You have a drill in progress. Resume it or discard it?"}
+          </p>
           <div className="button-row">
             <button className="button" onClick={resumeSaved}>
-              Resume
+              {resumable.state.status === "completed" ? "Build debrief" : "Resume"}
             </button>
             <button className="button button-secondary" onClick={discardSaved}>
               Discard
@@ -342,10 +394,27 @@ export function DrillSession() {
 
       {spendCapReached && <SampleDebrief />}
 
-      {state?.status === "completed" && (
-        <section className="panel">
-          <p>Drill complete.</p>
-        </section>
+      {state?.status === "completed" && !spendCapReached && (
+        <>
+          {scoring && (
+            <p className="banner" role="status">
+              Building your debrief…
+            </p>
+          )}
+          {debriefError && (
+            <p className="alert" role="alert">
+              <strong>Error:</strong> {debriefError}
+            </p>
+          )}
+          {debriefOwed && progress && (
+            <div className="button-row">
+              <button className="button" onClick={() => void scoreFinishedSession(progress)}>
+                Try again
+              </button>
+            </div>
+          )}
+          {debrief && <DebriefView debrief={debrief} onPractice={practice} />}
+        </>
       )}
     </div>
   );

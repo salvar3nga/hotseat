@@ -35,7 +35,7 @@ function seededShuffle<T>(items: readonly T[], seed: number): T[] {
 function planFor(config: SessionConfig, { mockCompetencyCounts }: EngineConfig): Competency[] {
   if (config.mode === "coding") return [];
   if (config.mode === "drill") {
-    return [COMPETENCIES[Math.floor(seededUnitInterval(config.seed) * COMPETENCIES.length)]];
+    return [config.competency ?? COMPETENCIES[Math.floor(seededUnitInterval(config.seed) * COMPETENCIES.length)]];
   }
   return seededShuffle(COMPETENCIES, config.seed).slice(
     0,
@@ -186,6 +186,15 @@ function hasScoredAnswer(state: SessionState): boolean {
   return state.turns.some(({ kind }) => kind === "answer");
 }
 
+// Nothing scorable means nothing to debrief, however the session ended.
+function finish(ended: SessionState): StepResult {
+  if (!hasScoredAnswer(ended)) return { state: { ...ended, status: "abandoned" }, effects: [] };
+  return {
+    state: { ...ended, status: "completed" },
+    effects: [{ type: "buildDebrief", transcript: ended.turns.map(({ speaker, body }) => ({ speaker, body })) }],
+  };
+}
+
 export function hintsUsed(state: SessionState): number {
   return state.turns.filter(({ kind }) => kind === "hint").length;
 }
@@ -242,7 +251,7 @@ function transition(state: SessionState, event: Event): StepResult {
         turn("interviewer", state.awaiting, event.text, event.now, event.now, state),
       ];
       return state.awaiting === "wrap-up"
-        ? { state: { ...state, turns, status: "completed", awaiting: null }, effects: [] }
+        ? finish({ ...state, turns, awaiting: null })
         : {
             state: { ...state, turns, awaiting: "answer", nudge: state.awaiting === "hint" ? state.nudge : "idle" },
             effects: [],
@@ -250,13 +259,7 @@ function transition(state: SessionState, event: Event): StepResult {
     }
     case "stop": {
       if (state.status !== "in-progress") return ignored;
-      const stopped = { ...state, awaiting: null };
-      return hasScoredAnswer(state)
-        ? {
-            state: { ...stopped, status: "completed" },
-            effects: [{ type: "buildDebrief", transcript: state.turns.map(({ speaker, body }) => ({ speaker, body })) }],
-          }
-        : { state: { ...stopped, status: "abandoned" }, effects: [] };
+      return finish({ ...state, awaiting: null });
     }
     case "tick": {
       const overBudget =

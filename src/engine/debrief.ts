@@ -1,3 +1,4 @@
+import { communicationMetrics } from "./communication-metrics";
 import type { CommunicationMetrics } from "./communication-metrics";
 import { quoteVerifier } from "./evidence";
 import type { VerifiedScores } from "./evidence";
@@ -31,6 +32,24 @@ export type ScoringRequest = {
   competencies: Competency[];
   metrics: CommunicationMetrics;
 };
+
+function answeredCompetencies({ turns }: SessionState): Competency[] {
+  const answered = turns.flatMap(({ kind, competency }) => (kind === "answer" && competency ? [competency] : []));
+  return answered.filter((competency, index) => answered.indexOf(competency) === index);
+}
+
+// A debrief is partial when the session ended before every planned competency was answered.
+export const isPartial = (state: SessionState): boolean => answeredCompetencies(state).length < state.plan.length;
+
+// Only call this for a completed session: it has at least one scored answer, so metrics exist.
+export function scoringRequestFor(state: SessionState): ScoringRequest {
+  return {
+    transcript: state.turns.map(({ speaker, body }) => ({ speaker, body })),
+    level: state.level,
+    competencies: answeredCompetencies(state),
+    metrics: communicationMetrics(state.turns, state.nudgeBudgetMs)!,
+  };
+}
 
 // Weaknesses are still proposals here. assembleDebrief checks them against the verified scores.
 export type ScoringResponse = VerifiedScores & { weaknesses: ProposedWeakness[] };

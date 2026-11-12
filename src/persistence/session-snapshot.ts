@@ -24,6 +24,9 @@ function isSnapshot(value: unknown): value is Snapshot {
   );
 }
 
+// A finished session stays on disk until its debrief is saved, so a failed scoring call can be retried.
+const owesDebrief = ({ effects }: StepResult) => effects.some(({ type }) => type === "buildDebrief");
+
 function isWorthSaving(previous: StepResult | null, next: StepResult): boolean {
   if (!previous) return true;
   return (
@@ -35,7 +38,7 @@ function isWorthSaving(previous: StepResult | null, next: StepResult): boolean {
 
 export function createSessionSnapshots(store: SnapshotStore) {
   async function save(progress: StepResult, now: number): Promise<void> {
-    if (progress.state.status === "in-progress") {
+    if (progress.state.status === "in-progress" || owesDebrief(progress)) {
       await store.write({ version: SNAPSHOT_VERSION, progress, savedAt: now });
     } else {
       await store.remove();

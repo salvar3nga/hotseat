@@ -31,7 +31,7 @@ export const INTERVIEWER_STYLES = ["strict", "standard", "coaching"] as const;
 export type InterviewerStyle = (typeof INTERVIEWER_STYLES)[number];
 
 export type SessionConfig = (
-  | { mode: "drill"; seed: number }
+  | { mode: "drill"; seed: number; competency?: Competency }
   | { mode: "mock"; durationMinutes: MockDuration; seed: number }
   | { mode: "coding"; seed: number }
 ) & { level: Level; style?: InterviewerStyle };

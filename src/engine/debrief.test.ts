@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { assembleDebrief } from "./debrief";
+import { assembleDebrief, isPartial, scoringRequestFor } from "./debrief";
+import { createSession, step } from "./engine";
 import type { ProposedWeakness } from "./debrief";
 import type { CommunicationMetrics } from "./communication-metrics";
 import type { Score } from "./ports";
-import type { Competency, SessionState, TranscriptEntry } from "./types";
+import type { Competency, Event, SessionState, TranscriptEntry } from "./types";
 
 const ANSWERS: Record<Competency, string> = {
   ownership: "I took the release checklist over when nobody else would",
@@ -142,5 +143,57 @@ describe("assembleDebrief", () => {
     const debrief = assemble({ scores, notScored: ["conflict"], partial: true });
 
     expect(debrief).toMatchObject({ scores, notScored: ["conflict"], metrics, partial: true });
+  });
+});
+
+describe("scoringRequestFor", () => {
+  const mockInterview = () =>
+    createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "senior", style: "strict" });
+  const play = (state: SessionState, events: Event[]) => events.reduce((current, event) => step(current, event).state, state);
+
+  const answeredTwoOfFour = () =>
+    play(mockInterview(), [
+      { type: "start", now: 0 },
+      { type: "modelReply", text: "Warm up?", now: 0 },
+      { type: "skipWarmUp", now: 1_000 },
+      { type: "modelReply", text: "First question?", now: 1_000 },
+      { type: "candidateTurn", text: "I owned the release end to end.", startedAt: 5_000, endedAt: 65_000 },
+      { type: "modelReply", text: "Second question?", now: 66_000 },
+      { type: "candidateTurn", text: "I argued for the simpler design.", startedAt: 70_000, endedAt: 80_000 },
+      { type: "modelReply", text: "Third question?", now: 81_000 },
+    ]);
+
+  it("asks to score only the competencies the candidate answered, in the order they were asked", () => {
+    const state = answeredTwoOfFour();
+
+    const request = scoringRequestFor(state);
+
+    expect(request.competencies).toEqual(state.plan.slice(0, 2));
+    expect(request.level).toBe("senior");
+    expect(request.transcript.filter(({ speaker }) => speaker === "candidate").map(({ body }) => body)).toEqual([
+      "",
+      "I owned the release end to end.",
+      "I argued for the simpler design.",
+    ]);
+  });
+
+  it("carries the communication metrics computed from the turns", () => {
+    const { metrics } = scoringRequestFor(answeredTwoOfFour());
+
+    expect(metrics.answers.map(({ durationMs }) => durationMs)).toEqual([60_000, 10_000]);
+  });
+
+  it("is partial when the plan was not finished", () => {
+    expect(isPartial(answeredTwoOfFour())).toBe(true);
+  });
+
+  it("is not partial when every planned competency was answered", () => {
+    const drill = play(createSession({ mode: "drill", seed: 7, level: "mid" }), [
+      { type: "start", now: 0 },
+      { type: "modelReply", text: "Question?", now: 0 },
+      { type: "candidateTurn", text: "I owned the release end to end.", startedAt: 1_000, endedAt: 5_000 },
+    ]);
+
+    expect(isPartial(drill)).toBe(false);
   });
 });
