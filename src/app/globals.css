@@ -94,20 +94,6 @@ p {
   font-weight: 400;
 }
 
-.privacy {
-  color: var(--ink-soft);
-  font-size: 0.9375rem;
-  max-width: 65ch;
-}
-
-.privacy-lead {
-  margin-top: 1.25rem;
-}
-
-.privacy-footer {
-  margin-top: 2.5rem;
-}
-
 .banner {
   margin-top: 1rem;
   padding: 0.75rem 1rem;

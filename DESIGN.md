@@ -183,7 +183,7 @@ The scoring-bands scale additionally steps four blue-grey grounds (94%, 86%, 74%
 - **Heading** (700, 1.25rem): panel headings.
 - **Body** (400, 1.0625rem, 1.55): transcript, answer text, form copy. Answer box uses line-height 1.6.
 - **Label** (700, 1.0625rem): buttons, field labels, legends, speaker names, choice names, timing label.
-- **Note** (400, 0.9375rem): privacy text (max 65ch), choice descriptions, band names and thresholds.
+- **Note** (400, 0.9375rem): choice descriptions, band names and thresholds.
 - **Tag** (700, 0.8125rem): small outlined turn tags.
 
 ### Named Rules
@@ -193,7 +193,7 @@ The scoring-bands scale additionally steps four blue-grey grounds (94%, 86%, 74%
 
 A single centred column, max 46rem, with 1rem side padding and 4rem bottom padding. The header is a baseline-aligned flex row (wordmark left, session time left on the right) closed by a 2px ink rule. During a session the body is a two-column grid: transcript and answer form fill the left (minmax(0, 1fr)), and the timing card sits in a fixed 10.5rem right rail, sticky at top 1rem. At 36rem and below, the grid collapses to one column: the timing card becomes a full-width horizontal strip (time left, label right, 1.75rem numerals) sticky at top 0.5rem above the content, transcript rows stack speaker over body, and the bands scale turns vertical.
 
-Spacing rhythm is 0.5, 0.75, 1, 1.25 and 1.5rem; section gaps are 1.5rem and the privacy footer sits 2.5rem below content. Transcript turns use a 5.5rem speaker column with 1rem gap and hairline dividers. The answer box is the largest control (min-height 14rem, full width, vertical resize).
+Spacing rhythm is 0.5, 0.75, 1, 1.25 and 1.5rem; section gaps are 1.5rem. Transcript turns use a 5.5rem speaker column with 1rem gap and hairline dividers. The answer box is the largest control (min-height 14rem, full width, vertical resize).
 
 ## Elevation & Depth
 

@@ -219,11 +219,6 @@ export function DrillSession() {
     if (answering) answerBox.current?.focus();
   }, [answering]);
   const answerRemaining = state ? answerRemainingMs(state, now) : null;
-  const privacy = (
-    <p className={`privacy ${state ? "privacy-footer" : "privacy-lead"}`}>
-      Your answers are sent to the Claude API to generate the interviewer&apos;s replies.
-    </p>
-  );
 
   return (
     <div className="app">
@@ -236,8 +231,6 @@ export function DrillSession() {
           </p>
         )}
       </header>
-
-      {!state && privacy}
 
       {!state && resumable && (
         <section className="panel">
@@ -353,8 +346,6 @@ export function DrillSession() {
           <p>Drill complete.</p>
         </section>
       )}
-
-      {state && privacy}
     </div>
   );
 }
