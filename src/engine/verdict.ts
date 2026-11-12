@@ -24,6 +24,7 @@ export const DEFAULT_VERDICT_CONFIG: VerdictConfig = {
   regionalCompetencies: [],
 };
 
+export const MIN_COMPETENCY_SCORE = 1;
 export const MAX_COMPETENCY_SCORE = 5;
 
 export type Verdict = {
