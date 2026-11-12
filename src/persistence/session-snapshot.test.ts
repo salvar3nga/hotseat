@@ -24,7 +24,7 @@ function inMemoryStore(): SnapshotStore & { slot: unknown } {
 const savedAt = (progress: StepResult, at: number): Snapshot => ({ version: SNAPSHOT_VERSION, progress, savedAt: at });
 
 const answering = (): StepResult => {
-  const started = step(createSession({ mode: "drill", seed: 7 }), { type: "start", now: 0 });
+  const started = step(createSession({ mode: "drill", seed: 7, level: "mid" }), { type: "start", now: 0 });
   return step(started.state, { type: "modelReply", text: "Tell me about a time.", now: 0 });
 };
 
@@ -52,7 +52,7 @@ describe("session snapshots", () => {
 
   it("keeps the effects still owed to the model", async () => {
     const snapshots = createSessionSnapshots(inMemoryStore());
-    const awaitingModel = step(createSession({ mode: "drill", seed: 7 }), { type: "start", now: 0 });
+    const awaitingModel = step(createSession({ mode: "drill", seed: 7, level: "mid" }), { type: "start", now: 0 });
     await snapshots.save(awaitingModel, 1_000);
 
     const resumed = await snapshots.loadResumable(2_000);
@@ -113,6 +113,14 @@ describe("session snapshots", () => {
   it("discards stored data that is not a snapshot", async () => {
     const store = inMemoryStore();
     store.slot = { savedAt: "yesterday", progress: {} };
+
+    expect(await createSessionSnapshots(store).loadResumable(0)).toBeNull();
+    expect(store.slot).toBeNull();
+  });
+
+  it("discards a snapshot saved before sessions carried a level", async () => {
+    const store = inMemoryStore();
+    store.slot = { ...savedAt(answering(), 0), version: 2 };
 
     expect(await createSessionSnapshots(store).loadResumable(0)).toBeNull();
     expect(store.slot).toBeNull();

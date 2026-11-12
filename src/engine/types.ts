@@ -1,3 +1,5 @@
+import type { Level } from "./ports";
+
 export const COMPETENCIES = [
   "ownership",
   "conflict",
@@ -32,7 +34,7 @@ export type SessionConfig = (
   | { mode: "drill"; seed: number }
   | { mode: "mock"; durationMinutes: MockDuration; seed: number }
   | { mode: "coding"; seed: number }
-) & { style?: InterviewerStyle };
+) & { level: Level; style?: InterviewerStyle };
 
 export type NudgedMode = Exclude<SessionConfig["mode"], "coding">;
 
@@ -104,6 +106,7 @@ export type Overrun = { questionIndex: number; overrunMs: number };
 export type SessionState = {
   mode: SessionConfig["mode"];
   style: InterviewerStyle;
+  level: Level;
   status: SessionStatus;
   seed: number;
   plan: Competency[];

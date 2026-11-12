@@ -14,7 +14,7 @@ const LEVEL_YEARS: Record<Level, string> = {
   staff: "8+ years",
 };
 
-type StartFormProps = { onStart: (style: InterviewerStyle) => void; disabled: boolean };
+type StartFormProps = { onStart: (style: InterviewerStyle, level: Level) => void; disabled: boolean };
 
 export function StartForm({ onStart, disabled }: StartFormProps) {
   const [style, setStyle] = useState<InterviewerStyle>(DEFAULT_STYLE);
@@ -25,7 +25,7 @@ export function StartForm({ onStart, disabled }: StartFormProps) {
       className="start-form"
       onSubmit={(event) => {
         event.preventDefault();
-        onStart(style);
+        onStart(style, level);
       }}
     >
       <h2 className="start-title">Set up your drill</h2>

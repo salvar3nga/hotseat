@@ -52,6 +52,7 @@ export function createSession(
   return {
     mode: config.mode,
     style,
+    level: config.level,
     status: "configured",
     seed: config.seed,
     plan: planFor(config, engineConfig),

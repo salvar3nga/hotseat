@@ -6,8 +6,8 @@ import type { Event, InterviewerStyle, SessionConfig, SessionState } from "./typ
 const play = (config: SessionConfig, events: Event[]): SessionState =>
   events.reduce((state, event) => step(state, event).state, createSession(config));
 
-const drill = (style?: InterviewerStyle): SessionConfig => ({ mode: "drill", seed: 7, style });
-const mock = (style?: InterviewerStyle): SessionConfig => ({ mode: "mock", durationMinutes: 30, seed: 7, style });
+const drill = (style?: InterviewerStyle): SessionConfig => ({ mode: "drill", seed: 7, level: "mid", style });
+const mock = (style?: InterviewerStyle): SessionConfig => ({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid", style });
 
 const start: Event = { type: "start", now: 1_000 };
 const reply = (now: number): Event => ({ type: "modelReply", text: "Interviewer text", now });

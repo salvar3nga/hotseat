@@ -12,26 +12,30 @@ import { DEFAULT_ENGINE_CONFIG } from "./types";
 import type { Effect, EngineConfig, Event, GenerateTurnEffect, InterviewerStyle, SessionConfig, SessionState, StyleSettings, Turn } from "./types";
 
 describe("createSession", () => {
+  it("records the level it was configured with", () => {
+    expect(createSession({ mode: "drill", seed: 7, level: "senior" }).level).toBe("senior");
+  });
+
   it("starts configured", () => {
-    expect(createSession({ mode: "drill", seed: 7 }).status).toBe("configured");
+    expect(createSession({ mode: "drill", seed: 7, level: "mid" }).status).toBe("configured");
   });
 
   it("plans one competency for a drill", () => {
-    expect(createSession({ mode: "drill", seed: 7 }).plan).toEqual(["ownership"]);
+    expect(createSession({ mode: "drill", seed: 7, level: "mid" }).plan).toEqual(["ownership"]);
   });
 
   it("plans a different competency for a different seed", () => {
-    expect(createSession({ mode: "drill", seed: 4 }).plan).toEqual(["communication"]);
+    expect(createSession({ mode: "drill", seed: 4, level: "mid" }).plan).toEqual(["communication"]);
   });
 
   it("keeps the mode it was configured with", () => {
-    expect(createSession({ mode: "drill", seed: 7 }).mode).toBe("drill");
+    expect(createSession({ mode: "drill", seed: 7, level: "mid" }).mode).toBe("drill");
   });
 });
 
 describe("createSession in mock mode", () => {
   const mock = (durationMinutes: 30 | 45, seed = 7) =>
-    createSession({ mode: "mock", durationMinutes, seed });
+    createSession({ mode: "mock", durationMinutes, seed, level: "mid" });
 
   it("plans 4 competencies at 30 minutes and 6 at 45", () => {
     expect(mock(30).plan).toHaveLength(4);
@@ -49,7 +53,7 @@ describe("createSession in mock mode", () => {
 
   it("takes counts and warm-up length from config", () => {
     const config = { ...DEFAULT_ENGINE_CONFIG, mockCompetencyCounts: { 30: 2, 45: 3 }, warmUpMinutes: 5 };
-    const session = createSession({ mode: "mock", durationMinutes: 45, seed: 7 }, config);
+    const session = createSession({ mode: "mock", durationMinutes: 45, seed: 7, level: "mid" }, config);
 
     expect(session.plan).toHaveLength(3);
     expect(session.warmUpMinutes).toBe(5);
@@ -57,7 +61,7 @@ describe("createSession in mock mode", () => {
 
   it("defaults to a 3 minute warm-up, and a drill has none", () => {
     expect(mock(30).warmUpMinutes).toBe(3);
-    expect(createSession({ mode: "drill", seed: 7 }).warmUpMinutes).toBeNull();
+    expect(createSession({ mode: "drill", seed: 7, level: "mid" }).warmUpMinutes).toBeNull();
   });
 });
 
@@ -71,7 +75,7 @@ function playEvents(initial: SessionState, events: Event[]) {
   );
 }
 
-const drill = () => createSession({ mode: "drill", seed: 7 });
+const drill = () => createSession({ mode: "drill", seed: 7, level: "mid" });
 
 const standardStyleWith = (overrides: Partial<StyleSettings>): EngineConfig => ({
   ...DEFAULT_ENGINE_CONFIG,
@@ -162,7 +166,7 @@ describe("a mock warm-up", () => {
     { type: "start", now: 1_000 },
     { type: "modelReply", text: "How has your week been?", now: 2_000 },
   ];
-  const mockSession = () => createSession({ mode: "mock", durationMinutes: 30, seed: 7 });
+  const mockSession = () => createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" });
   const [firstCompetency] = mockSession().plan;
 
   it("opens with a warm-up request that has no competency", () => {
@@ -232,7 +236,7 @@ describe("follow-ups", () => {
     endedAt: 9_000,
     missingSignal: true,
   });
-  const mockSession = () => createSession({ mode: "mock", durationMinutes: 30, seed: 7 });
+  const mockSession = () => createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" });
   const [first] = mockSession().plan;
 
   it("asks a follow-up on the same competency while a STAR signal is missing", () => {
@@ -267,7 +271,7 @@ describe("follow-ups", () => {
 
   it("reads the cap from config", () => {
     const session = createSession(
-      { mode: "mock", durationMinutes: 30, seed: 7 },
+      { mode: "mock", durationMinutes: 30, seed: 7, level: "mid" },
       standardStyleWith({ followUpCap: 1 }),
     );
     const played = playEvents(session, [...startedMock, ...answeredWithFollowUps(1), vagueAnswer()]);
@@ -332,8 +336,8 @@ describe("the session clock", () => {
 
   it("budgets 10 minutes for a drill and the chosen duration for a mock", () => {
     expect(remainingMs(drill(), 0)).toBe(10 * MINUTE);
-    expect(remainingMs(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), 0)).toBe(30 * MINUTE);
-    expect(remainingMs(createSession({ mode: "mock", durationMinutes: 45, seed: 7 }), 0)).toBe(45 * MINUTE);
+    expect(remainingMs(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }), 0)).toBe(30 * MINUTE);
+    expect(remainingMs(createSession({ mode: "mock", durationMinutes: 45, seed: 7, level: "mid" }), 0)).toBe(45 * MINUTE);
   });
 
   it("does not run before the session starts", () => {
@@ -411,7 +415,7 @@ describe("the nudge", () => {
     ]).state;
 
   const mockAnswering = () =>
-    playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+    playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Warm up?", now: 1_500 },
       { type: "skipWarmUp", now: 1_800 },
@@ -430,7 +434,7 @@ describe("the nudge", () => {
 
   it("takes the budget from config", () => {
     const config = standardStyleWith({ nudgeMinutes: { mock: 1, drill: 1 } });
-    const state = playEvents(createSession({ mode: "drill", seed: 7 }, config), [
+    const state = playEvents(createSession({ mode: "drill", seed: 7, level: "mid" }, config), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Q", now: answeringSince },
     ]).state;
@@ -513,7 +517,7 @@ describe("the nudge", () => {
   });
 
   it("does not nudge a warm-up answer", () => {
-    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Warm up?", now: 1_500 },
     ]).state;
@@ -534,7 +538,7 @@ describe("when the clock reaches zero", () => {
     ]).state;
 
   const mockAnsweringFirstQuestion = () =>
-    playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+    playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Warm up?", now: 1_500 },
       { type: "skipWarmUp", now: 1_800 },
@@ -609,7 +613,7 @@ describe("when the clock reaches zero", () => {
   });
 
   it("wraps up instead of asking the first question after a warm-up that ran out the clock", () => {
-    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Warm up?", now: answeringSince },
     ]).state;
@@ -689,7 +693,7 @@ describe("stopping a session", () => {
   });
 
   it("abandons when the only candidate turns are a skipped warm-up", () => {
-    const state = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+    const state = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Warm up?", now: 1_500 },
       { type: "skipWarmUp", now: 1_800 },
@@ -700,7 +704,7 @@ describe("stopping a session", () => {
   });
 
   it("abandons when the candidate only answered the warm-up", () => {
-    const state = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+    const state = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Warm up?", now: 1_500 },
       { type: "candidateTurn", text: "Fine.", startedAt: 1_500, endedAt: 2_000 },
@@ -747,7 +751,7 @@ describe("a coding session", () => {
   const MINUTE = 60_000;
   const answeringSince = 2_000;
   const after = (ms: number) => answeringSince + ms;
-  const coding = () => createSession({ mode: "coding", seed: 7 });
+  const coding = () => createSession({ mode: "coding", seed: 7, level: "mid" });
   const answering = () =>
     playEvents(coding(), [
       { type: "start", now: 1_000 },
@@ -762,7 +766,7 @@ describe("a coding session", () => {
   });
 
   it("takes the length from config", () => {
-    const session = createSession({ mode: "coding", seed: 7 }, { ...DEFAULT_ENGINE_CONFIG, codingMinutes: 40 });
+    const session = createSession({ mode: "coding", seed: 7, level: "mid" }, { ...DEFAULT_ENGINE_CONFIG, codingMinutes: 40 });
 
     expect(remainingMs(session, 0)).toBe(40 * MINUTE);
   });
@@ -815,7 +819,7 @@ describe("a coding session", () => {
 describe("a per-question timer", () => {
   const MINUTE = 60_000;
   const perQuestion = () => {
-    const state = createSession({ mode: "coding", seed: 7 });
+    const state = createSession({ mode: "coding", seed: 7, level: "mid" });
     return { ...state, plan: ["ownership", "conflict"] as SessionState["plan"] };
   };
 
@@ -849,7 +853,7 @@ describe("currentQuestionTranscript", () => {
 
   it("keeps the latest question with its answers and follow-ups, and drops earlier questions", () => {
     const state: SessionState = {
-      ...createSession({ mode: "mock", durationMinutes: 30, seed: 7 }),
+      ...createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }),
       turns: [
         turn("interviewer", "warm-up", "How was your week?"),
         turn("candidate", "warm-up", "Good."),
@@ -870,7 +874,7 @@ describe("currentQuestionTranscript", () => {
 });
 
 describe("interviewer style", () => {
-  const styled = (style?: InterviewerStyle) => createSession({ mode: "drill", seed: 7, style });
+  const styled = (style?: InterviewerStyle) => createSession({ mode: "drill", seed: 7, level: "mid", style });
   const answeringSince = 2_000;
   const tickAfterSeconds = (state: SessionState, seconds: number) =>
     step(state, { type: "tick", now: answeringSince + seconds * 1_000 });
@@ -886,7 +890,7 @@ describe("interviewer style", () => {
   });
 
   it("applies to mock sessions too", () => {
-    expect(createSession({ mode: "mock", durationMinutes: 30, seed: 7, style: "strict" }).style).toBe("strict");
+    expect(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid", style: "strict" }).style).toBe("strict");
   });
 
   it("nudges earlier in coaching than in standard or strict", () => {
@@ -906,7 +910,7 @@ describe("hints", () => {
   const answeringSince = 2_000;
   const at = (seconds: number) => answeringSince + seconds * 1_000;
   const answeringDrill = (style?: InterviewerStyle) =>
-    playEvents(createSession({ mode: "drill", seed: 7, style }), [
+    playEvents(createSession({ mode: "drill", seed: 7, level: "mid", style }), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "Question?", now: answeringSince },
     ]).state;
@@ -957,7 +961,7 @@ describe("hints", () => {
   });
 
   it("ignores a hint when no answer is awaited", () => {
-    const waitingForQuestion = step(createSession({ mode: "drill", seed: 7 }), { type: "start", now: 1_000 }).state;
+    const waitingForQuestion = step(createSession({ mode: "drill", seed: 7, level: "mid" }), { type: "start", now: 1_000 }).state;
 
     expect(requestHint(waitingForQuestion).effects).toEqual([]);
   });
@@ -969,7 +973,7 @@ describe("hints", () => {
   });
 
   it("ignores a hint during the warm-up", () => {
-    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7 }), [
+    const warmingUp = playEvents(createSession({ mode: "mock", durationMinutes: 30, seed: 7, level: "mid" }), [
       { type: "start", now: 1_000 },
       { type: "modelReply", text: "How was your week?", now: answeringSince },
     ]).state;
@@ -1008,18 +1012,18 @@ describe("answerRemainingMs", () => {
     ]).state;
 
   it("counts down the nudge budget while the candidate answers", () => {
-    const state = answering({ mode: "drill", seed: 7 });
+    const state = answering({ mode: "drill", seed: 7, level: "mid" });
 
     expect(answerRemainingMs(state, answeringSince + 60_000)).toBe(120_000);
   });
 
   it("goes negative once the answer runs past the budget", () => {
-    const state = answering({ mode: "drill", seed: 7 });
+    const state = answering({ mode: "drill", seed: 7, level: "mid" });
 
     expect(answerRemainingMs(state, answeringSince + 200_000)).toBe(-20_000);
   });
 
   it("has no budget in a coding session", () => {
-    expect(answerRemainingMs(answering({ mode: "coding", seed: 7 }), answeringSince + 60_000)).toBeNull();
+    expect(answerRemainingMs(answering({ mode: "coding", seed: 7, level: "mid" }), answeringSince + 60_000)).toBeNull();
   });
 });

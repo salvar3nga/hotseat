@@ -2,7 +2,7 @@ import { step } from "../engine/engine";
 import type { StepResult } from "../engine/types";
 
 export const SNAPSHOT_TTL_MS = 24 * 60 * 60_000;
-export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_VERSION = 3;
 
 export type Snapshot = { version: number; progress: StepResult; savedAt: number };
 

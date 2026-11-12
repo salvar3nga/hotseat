@@ -12,6 +12,7 @@ import {
   step,
 } from "../engine/engine";
 import { phaseBanner } from "../engine/phase-banner";
+import type { Level } from "../engine/ports";
 import { isGenerateTurn } from "../engine/types";
 import type { AssessmentRequest, Event, InterviewerStyle, SessionState, StepResult, TurnKind, TurnRequest } from "../engine/types";
 import { indexedDbSnapshotStore } from "../persistence/indexeddb-snapshot-store";
@@ -184,9 +185,9 @@ export function DrillSession() {
     ignoreFailure(snapshots.discard());
   }
 
-  function startDrill(style: InterviewerStyle) {
+  function startDrill(style: InterviewerStyle, level: Level) {
     const seed = Math.floor(Math.random() * 2 ** 32);
-    void advance(step(createSession({ mode: "drill", seed, style }), { type: "start", now: Date.now() }));
+    void advance(step(createSession({ mode: "drill", seed, style, level }), { type: "start", now: Date.now() }));
   }
 
   function requestHint() {
