@@ -26,7 +26,11 @@
 
 **Rubric**: The scoring criteria for a competency at a given level. Every score must cite evidence.
 
-**Evidence**: A quote from the candidate's transcript supporting a score.
+**Evidence**: A quote from the candidate's transcript supporting a score. It must be a verbatim substring of one candidate turn, ignoring case and whitespace, and at least 4 words long. The server checks this, never the model.
+
+**Score**: A whole number from 1 to 5 for one competency, relative to the candidate's level: 1 is no usable evidence of the skill, 3 is competent for the level, 5 is exceptional. A 4 always means strong for the candidate's own level. A score with no verified evidence is invalid.
+
+**Not scored**: A competency with no valid score, because it was skipped, never reached, or its scores failed the evidence check after one retry. Different from a score of 1, which means the candidate answered but showed no skill. Left out of the verdict.
 
 **Engine**: The session state machine, `(state, event) -> (state, effects)`. Pure, UI-free, runs in the browser. Never reads a real clock; time comes in as input. Model calls and timers are injected.
 
@@ -56,7 +60,7 @@
 
 **Wrap-up**: The interviewer's closing turn. When the clock hits zero no new question is asked, the current answer finishes, then the wrap-up.
 
-**Snapshot**: The in-progress session saved to IndexedDB after every turn, one slot per browser, expiring after 24 hours. Deleted when the session ends and by "delete all history". Time waiting on the model and time away from the tab do not count against the clock.
+**Snapshot**: The in-progress session saved to IndexedDB after every turn, one slot per browser, expiring after 24 hours. Kept after the session ends until a debrief is saved, so a failed scoring call can be retried, and deleted then and by "delete all history". Time waiting on the model and time away from the tab do not count against the clock.
 
 **Abandoned**: Session status for a session with nothing scorable. No debrief. Stopping after at least one scored answer is `completed` with a partial debrief.
 
@@ -64,7 +68,9 @@
 
 **Per-question timer**: Clock scope where each question gets its own budget instead of the session sharing one. Submitting after zero is accepted and the overrun is recorded per question. Used by coding sessions, available to any session type.
 
-**Debrief**: End-of-session report: score per competency with evidence, rewritten answers for top weaknesses, and a practice plan.
+**Debrief**: End-of-session report: score per competency with evidence, rewritten answers for top weaknesses, and a practice plan. Scores and weaknesses come from one model call. The verdict, communication metrics and practice plan are computed by code.
+
+**Weakness**: One of the top two or three competencies to improve, chosen by the model, with a rewritten stronger version of one of the candidate's actual answers. Dropped when its competency was not scored or its answer matches no verified quote.
 
 **Hiring bar**: The score a candidate needs for Hire at their level. It is the Hire edge of that level's verdict bands.
 
@@ -89,6 +95,8 @@
 **Register**: Formal (`Sie`) or informal (`du`) address in German sessions. Default `Sie`.
 
 **History**: Debriefs stored in the browser (IndexedDB) as structured data. No server-side storage.
+
+**History entry**: One saved debrief: id, `schemaVersion`, date, seed, mode, level, interview language, interviewer style, partial flag, scores with quotes, weaknesses, practice plan and communication metrics. No transcript and no verdict, which is recomputed. Older versions are migrated when read, and newer versions are skipped and left in place.
 
 **Eval fixture**: A good, vague, or bad sample answer used to check scoring consistency. English and German sets.
 
