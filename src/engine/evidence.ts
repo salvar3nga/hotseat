@@ -14,6 +14,14 @@ const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim
 const isScoreValue = (value: number) =>
   Number.isInteger(value) && value >= MIN_COMPETENCY_SCORE && value <= MAX_COMPETENCY_SCORE;
 
+export function quoteVerifier(transcript: TranscriptEntry[]): (quote: string) => boolean {
+  const candidateTurns = transcript.filter(({ speaker }) => speaker === "candidate").map(({ body }) => normalize(body));
+  return (quote) => {
+    const normalized = normalize(quote);
+    return normalized.split(" ").length >= MIN_QUOTE_WORDS && candidateTurns.some((turn) => turn.includes(normalized));
+  };
+}
+
 export function verifyScores({
   proposed,
   transcript,
@@ -23,14 +31,7 @@ export function verifyScores({
   transcript: TranscriptEntry[];
   competencies: Competency[];
 }): VerifiedScores {
-  const candidateTurns = transcript.filter(({ speaker }) => speaker === "candidate").map(({ body }) => normalize(body));
-
-  const isVerbatimQuote = (quote: string) => {
-    const normalized = normalize(quote);
-    return (
-      normalized.split(" ").length >= MIN_QUOTE_WORDS && candidateTurns.some((turn) => turn.includes(normalized))
-    );
-  };
+  const isVerbatimQuote = quoteVerifier(transcript);
 
   const verify = (competency: Competency): Score | null => {
     for (const candidate of proposed.filter((score) => score.competency === competency)) {
